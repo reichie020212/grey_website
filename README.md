@@ -1,78 +1,126 @@
 # Castiel "Lulu" Grey Butay — A Little Biography
 
-A small, lovingly hand-crafted biography website for my baby son. Single page, owner-editable, photos and stories live in your browser.
+A small, lovingly hand-crafted biography website for my baby son. Single page, owner-editable, photos and stories live on a tiny self-hosted backend.
 
 > _Screenshot placeholder — add `screenshots/home.png` and reference it here._
 
 ## What this is
 
 - A single-page React + CSS site with no build step (React and Babel load from a CDN, JSX is compiled in the browser).
-- All content — text, photos, guestbook entries — is stored in the browser's `localStorage`. There is no backend.
-- Owner edit mode is gated by a soft passcode — visitors see a read-only view.
-- Designed to be self-hosted on a small server (e.g. a Mac mini at home) using Docker Compose + nginx.
+- A tiny **PocketBase** backend (one Go binary + SQLite) holds the editable content, photos, and guestbook entries.
+- Owners sign in with a real email + password. Visitors see the same content read-only, and can sign the guestbook.
+- Designed to be self-hosted on a small server (e.g. a Mac mini at home) using Docker Compose + nginx + PocketBase.
 
 ## Tech stack
 
 - **React 18.3.1** — loaded from `unpkg.com` (CDN, with SRI hashes).
 - **Babel standalone 7.29.0** — compiles JSX in the browser. No Node build pipeline.
 - **Vanilla CSS** with light/dark theme via CSS variables.
-- **localStorage** for persistence (no database).
-- **nginx (alpine)** as the production static-file server.
-- **Docker Compose** for the deploy.
+- **PocketBase v0.37** — single-binary Go server with SQLite, auth, file uploads, REST API, and an admin UI.
+- **nginx (alpine)** — serves the static frontend and reverse-proxies `/api/` and `/_/` to PocketBase.
+- **Docker Compose** — two services: `web` (nginx) and `pb` (PocketBase).
 
-## Quickstart — run locally (no Docker)
+### Architecture at a glance
 
-The simplest path is a tiny static server in the project root. Pick whichever you have:
-
-```sh
-# Python 3 (preinstalled on macOS)
-python3 -m http.server 8080
-
-# or with npx (no install)
-npx serve . -l 8080
+```
+                          ┌────────────────────────────────────────┐
+                          │           Docker Compose stack          │
+                          │                                          │
+   browser → :HOST_PORT → │  web (nginx)  ───── /api, /_ proxy ───→ │  pb (PocketBase)
+                          │   - serves static index.html, css, jsx   │   - SQLite at /pb/pb_data
+                          │   - same-origin proxy to pb              │   - file uploads at /pb/pb_data/storage
+                          │                                          │
+                          └────────────────────────────────────────┘
 ```
 
-Then visit <http://localhost:8080>.
+The frontend talks to PocketBase via `/api/...` (same origin, no CORS, no extra CSP rules). Photos served by PocketBase live at `/api/files/{collection}/{record}/{filename}`.
 
-> Opening `index.html` directly via `file://` _mostly_ works but some browsers block CDN scripts or local subresources due to CORS. Use a local server instead.
+## Quickstart — dev instance (your laptop)
 
-## Run with Docker locally
+You need Docker Desktop or Colima running.
 
 ```sh
-cp .env.example .env  # optional — only if you want to change HOST_PORT
+# 1. Bring everything up
 docker compose up --build
+
+# 2. (first run only) create your owner account in PocketBase's admin UI
+open http://localhost:8080/_/        # or paste the URL into a browser
+# follow the first-run prompts to set your email + password
+
+# 3. Open the site
+open http://localhost:8080/
 ```
 
-Visit <http://localhost:8080> (or whatever `HOST_PORT` you set).
+That's it. Click the 🔒 in the top-right, sign in with the credentials you just made, and you're in edit mode. Visitors hitting the same URL see the read-only view.
 
 Stop with `Ctrl+C`, or `docker compose down` if you ran detached.
 
-## Deploy to a Mac mini headless server
+> **Note on `pb_data/`:** the directory is bind-mounted from the host so your SQLite file and uploaded photos live alongside your repo. It is gitignored — don't commit it. It also can't be safely shared between machines without copying the whole directory.
 
-The site is a static bundle behind nginx. The compose file is Apple-Silicon-friendly (`nginx:alpine` has a `linux/arm64` build).
+### Talking to the API directly
 
-Assumes Docker Desktop or [Colima](https://github.com/abiosoft/colima) is running on the Mac mini and you have SSH access.
+Sanity checks while the stack is up:
 
 ```sh
-# 1. Clone on the Mac mini
+curl http://localhost:8080/api/health
+curl 'http://localhost:8080/api/collections/content/records?perPage=1' | head -c 200
+curl 'http://localhost:8080/api/collections/guestbook/records?sort=-created'
+```
+
+Anyone can post to the guestbook (no auth — that's by design):
+
+```sh
+curl -X POST http://localhost:8080/api/collections/guestbook/records \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Test","body":"Hello, Lulu!"}'
+```
+
+## Production — Mac mini headless server
+
+Same compose, just on the server. Assumes Docker Desktop or [Colima](https://github.com/abiosoft/colima) is installed and you have SSH access.
+
+### First-time bring-up
+
+```sh
 ssh mac-mini
 git clone <this-repo-url> grey_website
 cd grey_website
 
-# 2. Set the host port (only if you want something other than 8080)
+# Optional — change the port (default is 8080)
 cp .env.example .env
 $EDITOR .env
 
-# 3. Bring the site up in the background
+# Bring both services up in the background
 docker compose up -d --build
 
-# 4. Sanity-check it's serving
-curl -I http://localhost:8080      # expect: HTTP/1.1 200 OK
-docker compose ps                  # expect the "web" service "Up" (healthy)
+# Confirm both are healthy
+docker compose ps
+curl -I http://localhost:8080            # expect 200 OK
+curl http://localhost:8080/api/health    # expect "API is healthy"
 
-# 5. Tail logs
-docker compose logs -f web
+# Tail logs (Ctrl+C to detach — services keep running)
+docker compose logs -f
 ```
+
+### Create the first owner account
+
+PocketBase needs at least one superuser before you can sign in to edit. Two options:
+
+**Option A — admin UI (easier, requires you to reach the site once):**
+
+```sh
+# from a machine on the same network, in a browser:
+open "http://<mac-mini-ip>:8080/_/"
+# follow the first-run prompts
+```
+
+**Option B — CLI (good for headless setups):**
+
+```sh
+docker compose exec pb pocketbase superuser upsert you@example.com 'a-strong-password'
+```
+
+After that, navigate to `http://<mac-mini-ip>:8080/`, click the 🔒, and sign in with the same credentials.
 
 ### Updating
 
@@ -82,19 +130,47 @@ git pull
 docker compose up -d --build
 ```
 
-Compose detects the rebuilt image and recreates the container.
+Compose detects the rebuilt image and recreates the container. Migrations in `pb/pb_migrations/` run automatically on `pb` startup; new migrations are applied, already-applied ones are skipped.
+
+### Backup
+
+PocketBase keeps everything (SQLite db, uploaded files, settings) under `./pb_data/`. Backup is one `tar`:
+
+```sh
+# Stop briefly to get a consistent snapshot (sub-second downtime)
+docker compose stop pb
+tar -czf "castiel-pb-$(date +%F).tgz" pb_data/
+docker compose start pb
+```
+
+Or, for a hot backup (PB uses SQLite WAL — usually safe but a stop-restart is more conservative):
+
+```sh
+tar -czf "castiel-pb-$(date +%F).tgz" pb_data/
+```
+
+Restore on any machine:
+
+```sh
+docker compose down
+rm -rf pb_data/
+tar -xzf castiel-pb-YYYY-MM-DD.tgz
+docker compose up -d --build
+```
+
+> **Sync to off-site backup:** add a cron job that `rsync`s `pb_data/` (or the tarballs) to a NAS / cloud bucket. The site and uploads are tiny — well under 100 MB until thousands of photos.
 
 ### Exposing to the LAN
 
-By default the container binds to whichever interface Docker exposes — usually all interfaces. To reach the site from another device on your network, browse to `http://<mac-mini-LAN-ip>:8080`. (Find the IP with `ipconfig getifaddr en0` on the Mac mini.)
+By default the container binds to all interfaces on the host. To reach the site from another device on your network, browse to `http://<mac-mini-LAN-ip>:8080`. Find the IP with `ipconfig getifaddr en0` on the Mac mini.
 
-If you only want loopback access, change the port mapping in `docker-compose.yml` to `"127.0.0.1:${HOST_PORT:-8080}:80"`.
+If you want loopback only, change the port mapping in `docker-compose.yml` to `"127.0.0.1:${HOST_PORT:-8080}:80"`.
 
 ### Optional: HTTPS + a real domain via Caddy reverse proxy
 
 The default compose intentionally does not include TLS — TLS needs a real domain pointed at the box. The simplest add-on is [Caddy](https://caddyserver.com/), which auto-issues Let's Encrypt certificates.
 
-Append a second service to `docker-compose.yml`:
+Append a third service to `docker-compose.yml`:
 
 ```yaml
   caddy:
@@ -115,7 +191,7 @@ volumes:
   caddy_config:
 ```
 
-…and create a `Caddyfile` next to it:
+…and a `Caddyfile` next to it:
 
 ```caddy
 yourdomain.example {
@@ -126,38 +202,47 @@ yourdomain.example {
 
 Point your domain's A/AAAA record at the Mac mini's public IP (and forward 80/443 through your router if you're behind NAT). Caddy will obtain a cert on first request.
 
-If you add Caddy, change the `web` service's `ports:` to `expose: ["80"]` so only Caddy is reachable from outside.
+If you add Caddy, change the `web` service to `expose: ["80"]` instead of `ports:` so only Caddy is reachable from outside.
 
 ## Editing content
 
-- **Owner passcode** is hardcoded in `app.jsx` — search for `PASSCODE` (currently `lulu1116`). Change the string and rebuild (`docker compose up -d --build`) to rotate it.
-- Open the site, click the lock affordance, enter the passcode → edit mode unlocks. Edits are saved to your browser's `localStorage` and **stay on that device only**.
-- Same passcode unlocks the **Tweaks panel**, which lets you tune visual settings live; tweaks also persist per-browser.
+- Click the 🔒 in the top-right, enter your superuser email + password.
+- Edit any text inline. Edits are debounced and saved to PocketBase 400 ms after you stop typing.
+- Drop or pick a new photo on any photo card to upload it (multipart upload to PocketBase).
+- The Tweaks panel (visual settings) is still per-visitor — those preferences live in `localStorage`, not the backend.
+- Lock the site again with the ✎ button.
+
+To reset everything, edit records directly in the PocketBase admin at `/_/`.
 
 ## Project structure
 
 ```
 .
-├── index.html        # entry — loads React + Babel + Google Fonts, mounts <App />
-├── app.jsx           # all components (Hero, About, Stats, Timeline, Gallery, Family, Letter, Routine, Wishes, Guestbook, LockModal, TweaksPanel)
-├── styles.css        # all styling, theme variables, layout
-├── tweaks-panel.jsx  # design-tweaks panel shell
-├── nginx.conf        # production server config (gzip, cache, CSP, SPA fallback)
-├── Dockerfile        # nginx:alpine + static assets
-├── docker-compose.yml
+├── index.html             # entry — loads React + Babel + Google Fonts, mounts <App />
+├── app.jsx                # all components + tiny PocketBase API client
+├── styles.css             # all styling, theme variables, layout
+├── tweaks-panel.jsx       # design-tweaks panel shell (localStorage state)
+├── nginx.conf             # production server config (gzip, cache, CSP, /api + /_ proxy, SPA fallback)
+├── Dockerfile             # frontend image (nginx:alpine + static assets)
+├── docker-compose.yml     # web + pb services
 ├── .dockerignore
-├── .env.example      # HOST_PORT
-├── CLAUDE.md         # AI-assistant guidance (Claude Code)
-├── GEMINI.md         # AI-assistant guidance (Gemini)
-├── HANDOFF_PROMPT.md # original productionization brief
+├── .env.example           # HOST_PORT
+├── pb/
+│   ├── Dockerfile         # PocketBase image (alpine + downloaded PB binary)
+│   └── pb_migrations/
+│       └── 0001_init.js   # creates content/photos/guestbook collections + seed
+├── pb_data/               # PB SQLite db + uploaded files (gitignored, bind-mounted)
+├── CLAUDE.md              # AI-assistant guidance (Claude Code)
+├── GEMINI.md              # AI-assistant guidance (Gemini)
+├── HANDOFF_PROMPT.md      # original productionization brief
 └── README.md
 ```
 
 ## Roadmap / known limitations
 
-- **localStorage is per-device.** Edits on the Mac mini's browser are not visible from your laptop. A real backend (small SQLite + a tiny API) is the next step if you want cross-device sync.
-- **The passcode is client-side only.** Anyone with the passcode — or with browser DevTools open — can flip into edit mode. It's a soft lock, not authentication.
-- **No backend = no rate limit, no spam protection** for guestbook entries beyond what the browser session enforces.
+- **The passcode is gone — auth is real now.** Anyone with your superuser credentials can edit. Use a strong password and don't reuse it.
+- **The guestbook is open.** Anyone who can reach the site can post. Add basic moderation by reading entries from the PB admin UI and deleting unwanted ones.
+- **No rate limit.** PocketBase has built-in basic rate limits but for a public-facing deploy you'll want a reverse proxy (Caddy / nginx LB) with stricter limits in front.
 - **CDN dependency.** React and Babel come from `unpkg.com`; if it's unreachable, the site won't render. Vendoring those scripts locally is straightforward when you outgrow it.
 - **`'unsafe-eval'` and `'unsafe-inline'` in CSP.** Both are required because Babel compiles JSX at runtime via `Function()` and injects the compiled output as inline `<script>` blocks. Removing either means moving to a real bundler.
 

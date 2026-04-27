@@ -1,19 +1,13 @@
 /* global React, ReactDOM, useTweaks, TweaksPanel, TweakSection, TweakSlider, TweakToggle, TweakRadio, TweakSelect, TweakColor, TweakButton, TweakText */
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-/* ============== Default content (the "database") ============== */
+/* ============== Fallback content (used only if PocketBase is unreachable) ============== */
+// The real source of truth lives in PocketBase. This shape is mirrored in the
+// initial migration (pb/pb_migrations/0001_init.js) — keep them in sync. The
+// `guestbook` field is intentionally absent here: guestbook entries live in
+// their own collection so visitors can post without auth.
 const DEFAULT_CONTENT = {
-  baby: {
-    fullName: "Castiel Grey Butay",
-    nickname: "Lulu",
-    tagline: "A small star, newly arrived — already the brightest thing in the room.",
-    birthdate: "2025-11-16",
-    birthplace: "—",
-    weight: "—",
-    height: "—",
-    gender: "Boy",
-    zodiac: "Scorpio",
-  },
+  baby: { fullName: "Castiel Grey Butay", nickname: "Lulu", tagline: "A small star, newly arrived — already the brightest thing in the room.", birthdate: "2025-11-16", birthplace: "—", weight: "—", height: "—", gender: "Boy", zodiac: "Scorpio" },
   facts: [
     { q: "Loudest at?", a: "3 AM, on the dot." },
     { q: "Superpower", a: "Turning milk into smiles." },
@@ -28,71 +22,109 @@ const DEFAULT_CONTENT = {
     { num: "AUTO_DAYS", unit: "days", lbl: "Age" },
     { num: "AUTO_MONTHS", unit: "months", lbl: "On Earth" },
   ],
-  timeline: [
-    { date: "Nov 16, 2025", title: "Hello, world.", desc: "Castiel arrived — eyes wide, already curious." },
-    { date: "Nov 18, 2025", title: "First trip home", desc: "Wrapped tight, slept the whole way." },
-    { date: "Dec 2025", title: "First real smile", desc: "Or maybe gas. We're choosing to believe." },
-    { date: "Jan 2026", title: "Discovered hands", desc: "Couldn't believe they belonged to him." },
-  ],
+  timeline: [],
   family: [
     { rel: "Mama", name: "Chin Butay", note: "Snack provider, lullaby singer, biggest fan." },
     { rel: "Papa", name: "Red Butay", note: "Diaper engineer. Comedian-in-residence." },
   ],
-  letter: {
-    date: "Written the night you came home",
-    body:
-      "Dear Lulu,\n\nWe waited so long for you. Today we counted your fingers, your toes, the freckle on your shoulder we already love.\n\nYou'll grow up faster than we want. So we're saving everything here — every milk-stain memory, every tiny yawn — so you can see, one day, how loved you were from the very first second.\n\nWelcome home, little one.",
-    sign: "— Mama & Papa",
-  },
-  routine: [
-    { time: "06:30", act: "Milk o'clock", note: "Eyes barely open. Still drinks like a champion." },
-    { time: "08:00", act: "Tummy time", note: "Two minutes. Then a nap. Earned it." },
-    { time: "10:00", act: "Morning nap", note: "Loud breathing. Tiny dreams." },
-    { time: "12:30", act: "Lunch + cuddles", note: "Milk again. Surprise!" },
-    { time: "15:00", act: "Walk in the carrier", note: "Best sleeper outdoors." },
-    { time: "18:00", act: "Bath time", note: "Kicks first, complains second." },
-    { time: "20:00", act: "Last feed", note: "Heavy eyelids, soft hums." },
-    { time: "03:00", act: "Surprise party", note: "Hosted by Lulu. Refreshments served." },
-  ],
-  wishes: [
-    "May you always come back to milk and naps when the world feels big.",
-    "May you laugh the kind of laugh that startles strangers into smiling.",
-    "May you be brave, even when bravery is just turning over for the first time.",
-    "May you know — every single day — exactly how loved you are.",
-    "May you find a friend who feels like home.",
-    "May you grow into someone you, yourself, would adore.",
-  ],
-  guestbook: [
-    { name: "Tita Joy", body: "He's perfect! Already winning at sleeping competitively.", when: "Nov 20, 2025" },
-    { name: "Lolo", body: "Took one look at him and forgot every word I knew.", when: "Nov 22, 2025" },
-  ],
-  gallery: [
-    { caption: "first day home", x: 6, y: 4, rot: -6 },
-    { caption: "tiny toes", x: 32, y: 10, rot: 4 },
-    { caption: "milk drunk", x: 58, y: 6, rot: -3 },
-    { caption: "with mama", x: 14, y: 42, rot: 5 },
-    { caption: "sleepy boy", x: 42, y: 48, rot: -7 },
-    { caption: "with papa", x: 68, y: 42, rot: 3 },
-  ],
+  letter: { date: "", body: "", sign: "" },
+  routine: [],
+  wishes: [],
+  gallery: [],
 };
 
-const STORAGE_KEY = "castiel-content-v1";
-const LOCK_KEY = "castiel-unlocked-v1";
-const PASSCODE = "lulu1116"; // owner-only edit passcode
+/* ============== PocketBase API client ============== */
+const API = "/api";
+const AUTH_COLLECTION = "_superusers";
+const TOKEN_KEY = "castiel-pb-token-v1";
 
-function loadContent() {
+const apiToken = () => localStorage.getItem(TOKEN_KEY) || "";
+const setApiToken = (t) => t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY);
+
+async function apiFetch(path, { method = "GET", json, form } = {}) {
+  const headers = {};
+  const tok = apiToken();
+  if (tok) headers["Authorization"] = tok;
+  let body;
+  if (form) {
+    body = form;
+  } else if (json !== undefined) {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(json);
+  }
+  const res = await fetch(API + path, { method, headers, body });
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    const err = new Error(`${res.status} ${res.statusText} — ${errBody}`);
+    err.status = res.status;
+    throw err;
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+const pbFileUrl = (rec, filename) => `${API}/files/${rec.collectionId}/${rec.id}/${filename}`;
+
+async function login(identity, password) {
+  const out = await apiFetch(`/collections/${AUTH_COLLECTION}/auth-with-password`, {
+    method: "POST",
+    json: { identity, password },
+  });
+  setApiToken(out.token);
+  return out;
+}
+
+const logout = () => setApiToken("");
+
+// On startup, verify a stored token is still valid; otherwise drop it.
+async function refreshAuth() {
+  if (!apiToken()) return false;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_CONTENT;
-    const parsed = JSON.parse(raw);
-    return { ...DEFAULT_CONTENT, ...parsed };
-  } catch (e) {
-    return DEFAULT_CONTENT;
+    await apiFetch(`/collections/${AUTH_COLLECTION}/auth-refresh`, { method: "POST" });
+    return true;
+  } catch (_) {
+    setApiToken("");
+    return false;
   }
 }
-function saveContent(c) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(c)); } catch (e) {}
+
+async function fetchContent() {
+  const out = await apiFetch("/collections/content/records?perPage=1");
+  const rec = out.items[0];
+  if (!rec) throw new Error("No content record found — run migrations.");
+  return { id: rec.id, data: { ...DEFAULT_CONTENT, ...rec.data } };
 }
+
+const saveContent = (recordId, data) =>
+  apiFetch(`/collections/content/records/${recordId}`, { method: "PATCH", json: { data } });
+
+async function fetchPhotos() {
+  const out = await apiFetch("/collections/photos/records?perPage=200");
+  const map = {};
+  const ids = {};
+  for (const rec of out.items) {
+    map[rec.slot] = pbFileUrl(rec, rec.image);
+    ids[rec.slot] = rec.id;
+  }
+  return { map, ids };
+}
+
+async function uploadPhoto(slot, file, existingId) {
+  const fd = new FormData();
+  fd.append("slot", slot);
+  fd.append("image", file);
+  const path = existingId
+    ? `/collections/photos/records/${existingId}`
+    : `/collections/photos/records`;
+  const rec = await apiFetch(path, { method: existingId ? "PATCH" : "POST", form: fd });
+  return { id: rec.id, url: pbFileUrl(rec, rec.image) };
+}
+
+const fetchGuestbook = () =>
+  apiFetch("/collections/guestbook/records?sort=-created&perPage=200").then((o) => o.items);
+
+const submitGuestbookEntry = (name, body) =>
+  apiFetch("/collections/guestbook/records", { method: "POST", json: { name, body } });
 
 /* ============== Helpers ============== */
 function ageFromBirth(dateStr) {
@@ -146,23 +178,30 @@ function Editable({ value, onChange, multiline = false, className = "", as = "sp
 }
 
 /* ============== Photo placeholder w/ swap ============== */
-function Photo({ id, label, photos, setPhotos, editing, className = "" }) {
+function Photo({ id, label, photos, onUpload, editing, className = "" }) {
   const inputRef = useRef(null);
+  const [busy, setBusy] = useState(false);
   const src = photos[id];
-  const onPick = (e) => {
+  const onPick = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setPhotos({ ...photos, [id]: reader.result });
-    reader.readAsDataURL(file);
+    setBusy(true);
+    try {
+      await onUpload(id, file);
+    } catch (err) {
+      alert(`Photo upload failed: ${err.message}`);
+    } finally {
+      setBusy(false);
+      e.target.value = "";
+    }
   };
   return (
     <div
-      className={`photo-placeholder ${src ? "has-img" : ""} ${className}`}
+      className={`photo-placeholder ${src ? "has-img" : ""} ${busy ? "busy" : ""} ${className}`}
       data-edit-photo={editing ? "" : null}
-      onClick={() => editing && inputRef.current?.click()}
+      onClick={() => editing && !busy && inputRef.current?.click()}
     >
-      {src ? <img src={src} alt={label} /> : <span className="ph-label">{label}</span>}
+      {src ? <img src={src} alt={label} /> : <span className="ph-label">{busy ? "uploading…" : label}</span>}
       {editing && (
         <input
           ref={inputRef}
@@ -298,7 +337,7 @@ function TopBar({ dark, setDark, music, setMusic, editing, unlocked, onLockClick
 }
 
 /* ============== Hero ============== */
-function Hero({ content, setContent, photos, setPhotos, editing }) {
+function Hero({ content, setContent, photos, onUpload, editing }) {
   const baby = content.baby;
   const update = (k, v) => setContent({ ...content, baby: { ...content.baby, [k]: v } });
   return (
@@ -354,7 +393,7 @@ function Hero({ content, setContent, photos, setPhotos, editing }) {
         <div className="portrait-floating f1">tiny human</div>
         <div className="portrait-floating f2">est. 2025</div>
         <div className="portrait-frame">
-          <Photo id="hero" label="Hero portrait — drop a favorite photo here" photos={photos} setPhotos={setPhotos} editing={editing} />
+          <Photo id="hero" label="Hero portrait — drop a favorite photo here" photos={photos} onUpload={onUpload} editing={editing} />
         </div>
         <div className="portrait-stamp">freshly<br/>baked<br/>★ ★ ★</div>
       </div>
@@ -491,7 +530,7 @@ function Timeline({ content, setContent, editing }) {
 }
 
 /* ============== Gallery (polaroids + slideshow) ============== */
-function Gallery({ content, setContent, photos, setPhotos, editing }) {
+function Gallery({ content, setContent, photos, onUpload, editing }) {
   const stageRef = useRef(null);
   const [dragId, setDragId] = useState(null);
   const [showSlide, setShowSlide] = useState(false);
@@ -566,7 +605,7 @@ function Gallery({ content, setContent, photos, setPhotos, editing }) {
             onDoubleClick={() => openSlide(i)}
           >
             <div className="pphoto">
-              <Photo id={`gallery-${i}`} label={g.caption} photos={photos} setPhotos={setPhotos} editing={editing} />
+              <Photo id={`gallery-${i}`} label={g.caption} photos={photos} onUpload={onUpload} editing={editing} />
             </div>
             <Editable as="div" className="pcap" value={g.caption} onChange={(v) => updateCap(i, v)} />
           </div>
@@ -580,7 +619,7 @@ function Gallery({ content, setContent, photos, setPhotos, editing }) {
         <button className="ss-arrow prev" onClick={() => navSlide(-1)}>‹</button>
         <div className="ss-frame">
           <div className="ss-photo">
-            <Photo id={`gallery-${slideIdx}`} label={content.gallery[slideIdx]?.caption || ""} photos={photos} setPhotos={setPhotos} editing={false} />
+            <Photo id={`gallery-${slideIdx}`} label={content.gallery[slideIdx]?.caption || ""} photos={photos} onUpload={onUpload} editing={false} />
           </div>
           <div className="ss-cap">{content.gallery[slideIdx]?.caption}</div>
         </div>
@@ -591,7 +630,7 @@ function Gallery({ content, setContent, photos, setPhotos, editing }) {
 }
 
 /* ============== Family ============== */
-function Family({ content, setContent, photos, setPhotos, editing }) {
+function Family({ content, setContent, photos, onUpload, editing }) {
   const updateFam = (i, k, v) => {
     const next = [...content.family];
     next[i] = { ...next[i], [k]: v };
@@ -610,7 +649,7 @@ function Family({ content, setContent, photos, setPhotos, editing }) {
         {content.family.map((p, i) => (
           <div className="family-card" key={i}>
             <div className="family-avatar">
-              <Photo id={`fam-${i}`} label={p.rel} photos={photos} setPhotos={setPhotos} editing={editing} />
+              <Photo id={`fam-${i}`} label={p.rel} photos={photos} onUpload={onUpload} editing={editing} />
             </div>
             <div>
               <div className="family-rel"><Editable value={p.rel} onChange={(v) => updateFam(i, "rel", v)} /></div>
@@ -621,7 +660,7 @@ function Family({ content, setContent, photos, setPhotos, editing }) {
         ))}
         <div className="family-card baby">
           <div className="family-avatar">
-            <Photo id="fam-baby" label="Castiel" photos={photos} setPhotos={setPhotos} editing={editing} />
+            <Photo id="fam-baby" label="Castiel" photos={photos} onUpload={onUpload} editing={editing} />
           </div>
           <div>
             <div className="family-rel">Their whole world</div>
@@ -714,17 +753,30 @@ function Wishes({ content, setContent }) {
 }
 
 /* ============== Guestbook ============== */
-function Guestbook({ content, setContent }) {
+const GB_COLORS = ["#809974", "#6fa6c4", "#d8895a", "#e8b8b0", "#f6e3a4"];
+const formatGuestbookWhen = (created) => {
+  const d = new Date(created);
+  if (isNaN(d)) return "";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+};
+
+function Guestbook({ entries, onSubmit }) {
   const [name, setName] = useState("");
   const [body, setBody] = useState("");
-  const submit = (e) => {
+  const [busy, setBusy] = useState(false);
+  const submit = async (e) => {
     e.preventDefault();
-    if (!name.trim() || !body.trim()) return;
-    const when = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-    setContent({ ...content, guestbook: [{ name: name.trim(), body: body.trim(), when }, ...content.guestbook] });
-    setName(""); setBody("");
+    if (!name.trim() || !body.trim() || busy) return;
+    setBusy(true);
+    try {
+      await onSubmit(name.trim(), body.trim());
+      setName(""); setBody("");
+    } catch (err) {
+      alert(`Couldn't sign the book: ${err.message}`);
+    } finally {
+      setBusy(false);
+    }
   };
-  const colors = ["#809974", "#6fa6c4", "#d8895a", "#e8b8b0", "#f6e3a4"];
   return (
     <section className="s" id="guestbook">
       <div className="s-head">
@@ -741,6 +793,7 @@ function Guestbook({ content, setContent }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={40}
+            disabled={busy}
           />
           <textarea
             placeholder="Write something kind for Castiel…"
@@ -748,15 +801,16 @@ function Guestbook({ content, setContent }) {
             onChange={(e) => setBody(e.target.value)}
             rows={3}
             maxLength={400}
+            disabled={busy}
           />
-          <button type="submit">Sign the book ✒</button>
+          <button type="submit" disabled={busy}>{busy ? "Signing…" : "Sign the book ✒"}</button>
         </form>
         <div className="gb-list">
-          {content.guestbook.map((m, i) => (
-            <div className="gb-msg" key={i} style={{ "--accent": colors[i % colors.length] }}>
+          {entries.map((m, i) => (
+            <div className="gb-msg" key={m.id || i} style={{ "--accent": GB_COLORS[i % GB_COLORS.length] }}>
               <div className="gb-from">
                 <div className="gb-name display">{m.name}</div>
-                <div className="gb-when">{m.when}</div>
+                <div className="gb-when">{formatGuestbookWhen(m.created)}</div>
               </div>
               <div className="gb-body">"{m.body}"</div>
             </div>
@@ -768,16 +822,28 @@ function Guestbook({ content, setContent }) {
 }
 
 /* ============== Lock modal ============== */
-function LockModal({ open, onClose, onUnlock, unlocked }) {
-  const [val, setVal] = useState("");
-  const [err, setErr] = useState(false);
+function LockModal({ open, onClose, onLogin, onLogout, unlocked }) {
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
   const inputRef = useRef(null);
-  useEffect(() => { if (open) setTimeout(() => inputRef.current?.focus(), 100); }, [open]);
-  const submit = (e) => {
+  useEffect(() => { if (open && !unlocked) setTimeout(() => inputRef.current?.focus(), 100); }, [open, unlocked]);
+
+  const submit = async (e) => {
     e?.preventDefault();
-    if (val === PASSCODE) { onUnlock(); setVal(""); setErr(false); }
-    else { setErr(true); setTimeout(() => setErr(false), 600); }
+    if (busy) return;
+    setBusy(true); setErr("");
+    try {
+      await onLogin(email, pw);
+      setEmail(""); setPw("");
+    } catch (ex) {
+      setErr(ex.status === 400 ? "Wrong email or password." : `Login failed: ${ex.message}`);
+    } finally {
+      setBusy(false);
+    }
   };
+
   if (unlocked) {
     return (
       <div className={`lock-modal ${open ? "open" : ""}`}>
@@ -785,7 +851,7 @@ function LockModal({ open, onClose, onUnlock, unlocked }) {
           <h3>Lock editing?</h3>
           <p>Visitors will see the site as read-only.</p>
           <div className="lock-actions">
-            <button className="primary" onClick={() => { onUnlock(); onClose(); }}>Lock it</button>
+            <button className="primary" onClick={() => { onLogout(); onClose(); }}>Lock it</button>
             <button className="ghost" onClick={onClose}>Cancel</button>
           </div>
         </div>
@@ -796,20 +862,30 @@ function LockModal({ open, onClose, onUnlock, unlocked }) {
     <div className={`lock-modal ${open ? "open" : ""}`}>
       <form className="lock-card" onSubmit={submit}>
         <h3>Owner only ✎</h3>
-        <p>Enter the passcode to edit Castiel's page.</p>
+        <p>Sign in with your PocketBase superuser account to edit Castiel's page.</p>
         <input
           ref={inputRef}
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="email"
+          autoComplete="username"
+          disabled={busy}
+        />
+        <input
           type="password"
-          value={val}
-          onChange={(e) => setVal(e.target.value)}
-          placeholder="passcode"
-          style={err ? { borderColor: "#c8553d", animation: "shake 0.4s" } : {}}
+          value={pw}
+          onChange={(e) => setPw(e.target.value)}
+          placeholder="password"
+          autoComplete="current-password"
+          disabled={busy}
+          style={{ marginTop: 8 }}
         />
         <div className="lock-actions">
-          <button type="submit" className="primary">Unlock</button>
-          <button type="button" className="ghost" onClick={onClose}>Cancel</button>
+          <button type="submit" className="primary" disabled={busy}>{busy ? "Signing in…" : "Unlock"}</button>
+          <button type="button" className="ghost" onClick={onClose} disabled={busy}>Cancel</button>
         </div>
-        <div className="lock-hint">hint: lulu's nickname + birthday (mmdd)</div>
+        {err ? <div className="lock-hint" style={{ color: "#c8553d" }}>{err}</div> : <div className="lock-hint">Manage admins at <a href="/_/" target="_blank" rel="noreferrer">/_/</a></div>}
       </form>
     </div>
   );
@@ -827,54 +903,68 @@ const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
 }/*EDITMODE-END*/;
 
 function App() {
-  const [content, setContent] = useState(loadContent);
-  const [photos, setPhotos] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("castiel-photos-v1") || "{}"); } catch (e) { return {}; }
-  });
-  const [unlocked, setUnlocked] = useState(() => localStorage.getItem(LOCK_KEY) === "1");
-  const [editing, setEditing] = useState(false); // edit mode active (only available if unlocked)
+  const [content, setContent] = useState(DEFAULT_CONTENT);
+  const [contentId, setContentId] = useState(null);
+  const [photos, setPhotos] = useState({});
+  const [photoIds, setPhotoIds] = useState({});
+  const [guestbook, setGuestbook] = useState([]);
+  const [unlocked, setUnlocked] = useState(() => !!apiToken());
+  const [editing, setEditing] = useState(false);
   const [lockOpen, setLockOpen] = useState(false);
   const [music, setMusic] = useState(false);
   const [saveStatus, setSaveStatus] = useState("saved");
+  const [loaded, setLoaded] = useState(false);
   const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
   const [dark, setDark] = useState(t.darkMode);
 
   useLullaby(music);
 
-  // Persist content
+  // Initial fetch — content, photos, guestbook in parallel + token refresh.
   useEffect(() => {
+    let alive = true;
+    Promise.all([
+      fetchContent().catch((e) => { console.warn("content fetch failed:", e); return null; }),
+      fetchPhotos().catch((e) => { console.warn("photos fetch failed:", e); return { map: {}, ids: {} }; }),
+      fetchGuestbook().catch((e) => { console.warn("guestbook fetch failed:", e); return []; }),
+      refreshAuth(),
+    ]).then(([c, ph, gb, authValid]) => {
+      if (!alive) return;
+      if (c) { setContent(c.data); setContentId(c.id); }
+      setPhotos(ph.map); setPhotoIds(ph.ids);
+      setGuestbook(gb);
+      if (!authValid) setUnlocked(false);
+      setLoaded(true);
+    });
+    return () => { alive = false; };
+  }, []);
+
+  // Persist content (debounced PATCH). Only fires when the owner is signed in;
+  // anonymous visitors triggering setContent (e.g. on the initial fetch) would
+  // 403 against PB's update rule.
+  useEffect(() => {
+    if (!loaded || !contentId || !unlocked) return;
     setSaveStatus("saving…");
-    const id = setTimeout(() => {
-      saveContent(content);
-      setSaveStatus("saved");
+    const tid = setTimeout(() => {
+      saveContent(contentId, content)
+        .then(() => setSaveStatus("saved"))
+        .catch((e) => setSaveStatus(`save failed: ${e.message}`));
     }, 400);
-    return () => clearTimeout(id);
-  }, [content]);
+    return () => clearTimeout(tid);
+  }, [content, contentId, loaded, unlocked]);
 
-  // Persist photos
-  useEffect(() => {
-    try { localStorage.setItem("castiel-photos-v1", JSON.stringify(photos)); } catch (e) {}
-  }, [photos]);
+  useEffect(() => { document.documentElement.setAttribute("data-theme", dark ? "dark" : "light"); }, [dark]);
 
-  // Apply theme
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
-  }, [dark]);
-
-  // Apply tweaks
   useEffect(() => {
     document.documentElement.style.setProperty("--peach-deep", t.primaryAccent);
     document.documentElement.style.setProperty("--sky-deep", t.secondaryAccent);
     document.documentElement.style.fontSize = (t.fontScale * 17) + "px";
   }, [t.primaryAccent, t.secondaryAccent, t.fontScale]);
 
-  // Confetti on load
   useEffect(() => {
     if (t.showConfettiOnLoad) setTimeout(() => fireConfetti(60), 400);
     if (t.musicOnLoad) setMusic(true);
   }, []); // eslint-disable-line
 
-  // Hearts on hover
   useEffect(() => {
     if (!t.showHearts) return;
     let last = 0;
@@ -888,36 +978,40 @@ function App() {
     return () => window.removeEventListener("mousemove", onMove);
   }, [t.showHearts]);
 
-  // Toggle edit when unlocked changes
-  useEffect(() => {
-    if (!unlocked) setEditing(false);
-    else setEditing(true);
-  }, [unlocked]);
+  useEffect(() => { setEditing(unlocked); }, [unlocked]);
 
   const onLockClick = () => {
     if (unlocked) {
-      // lock it
+      logout();
       setUnlocked(false);
-      localStorage.removeItem(LOCK_KEY);
     } else {
       setLockOpen(true);
     }
   };
 
-  const handleUnlock = () => {
+  const handleLogin = async (email, password) => {
+    await login(email, password);
     setUnlocked(true);
-    localStorage.setItem(LOCK_KEY, "1");
     setLockOpen(false);
   };
 
-  const resetContent = () => {
-    if (confirm("Reset all content to defaults? This can't be undone.")) {
-      setContent(DEFAULT_CONTENT);
-      setPhotos({});
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem("castiel-photos-v1");
-    }
+  const handleLogout = () => {
+    logout();
+    setUnlocked(false);
   };
+
+  const onPhotoUpload = useCallback(async (slot, file) => {
+    const existing = photoIds[slot];
+    const { id, url } = await uploadPhoto(slot, file, existing);
+    setPhotos((p) => ({ ...p, [slot]: url }));
+    setPhotoIds((m) => ({ ...m, [slot]: id }));
+  }, [photoIds]);
+
+  const onGuestbookSubmit = useCallback(async (name, body) => {
+    await submitGuestbookEntry(name, body);
+    const items = await fetchGuestbook();
+    setGuestbook(items);
+  }, []);
 
   return (
     <div className={editing ? "edit-on" : ""}>
@@ -928,16 +1022,16 @@ function App() {
         onLockClick={onLockClick}
         onSaveStatus={saveStatus}
       />
-      <Hero content={content} setContent={setContent} photos={photos} setPhotos={setPhotos} editing={editing} />
+      <Hero content={content} setContent={setContent} photos={photos} onUpload={onPhotoUpload} editing={editing} />
       <About content={content} setContent={setContent} editing={editing} />
       <Stats content={content} />
       <Timeline content={content} setContent={setContent} editing={editing} />
-      <Gallery content={content} setContent={setContent} photos={photos} setPhotos={setPhotos} editing={editing} />
-      <Family content={content} setContent={setContent} photos={photos} setPhotos={setPhotos} editing={editing} />
+      <Gallery content={content} setContent={setContent} photos={photos} onUpload={onPhotoUpload} editing={editing} />
+      <Family content={content} setContent={setContent} photos={photos} onUpload={onPhotoUpload} editing={editing} />
       <Letter content={content} setContent={setContent} />
       <Routine content={content} setContent={setContent} editing={editing} />
       <Wishes content={content} setContent={setContent} />
-      <Guestbook content={content} setContent={setContent} />
+      <Guestbook entries={guestbook} onSubmit={onGuestbookSubmit} />
 
       <footer className="footer">
         <div className="hand" style={{ fontSize: 32, color: "var(--peach-deep)" }}>Welcome, Lulu.</div>
@@ -952,7 +1046,8 @@ function App() {
       <LockModal
         open={lockOpen}
         onClose={() => setLockOpen(false)}
-        onUnlock={unlocked ? () => { setUnlocked(false); localStorage.removeItem(LOCK_KEY); } : handleUnlock}
+        onLogin={handleLogin}
+        onLogout={handleLogout}
         unlocked={unlocked}
       />
 
@@ -971,7 +1066,6 @@ function App() {
 
         <TweakSection label="Editing" />
         <TweakButton label={unlocked ? "🔒 Lock editing" : "✎ Unlock to edit"} onClick={onLockClick} />
-        {unlocked && <TweakButton label="↺ Reset all content" onClick={resetContent} />}
       </TweaksPanel>
     </div>
   );

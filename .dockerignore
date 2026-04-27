@@ -13,3 +13,6 @@ screenshots
 *.jpeg
 *.gif
 *.log
+# PocketBase runtime data and image build context — never copied into the web image.
+pb_data
+pb
