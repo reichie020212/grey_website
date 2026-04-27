@@ -154,16 +154,16 @@ Already excludes `.env` (with `!.env.example` allow-listed). No change required.
 ### Modified: `README.md`
 
 - **Local development → First-time setup**: extend the "clone and `docker compose up`" block to first do `cp .env.example .env`, edit in credentials, then bring the stack up. The stack will refuse to start otherwise.
-- **Local development → Create your owner account**: rewrite. The new flow is "your account is the one in `.env`" — no admin-UI wizard, no separate CLI command. Add a one-liner "Rotating the password" tip pointing back to `.env` + `docker compose restart pb`.
+- **Local development → Create your owner account**: rewrite. The new flow is "your account is the one in `.env`" — no admin-UI wizard, no separate CLI command. Add a one-liner "Rotating the password" tip pointing back to `.env` + `docker compose up -d pb`. (`docker compose restart pb` does not pick up `.env` changes — `restart` reuses the container's cached environment; only `up -d` recreates the container with fresh env vars.)
 - **Production → First-time deployment**: the existing `cp .env.example .env` step now requires filling in `PB_SUPERUSER_EMAIL` and `PB_SUPERUSER_PASSWORD` before `docker compose up -d --build`. Update the "Create the first owner account (CLI — recommended for headless)" subsection: it becomes "set credentials in `.env`" rather than running `docker compose exec ... upsert`.
-- **Troubleshooting → Locked out of `/_/`**: replace the `docker compose exec ... update-password` recipe with "edit `.env`, then `docker compose restart pb`" as the primary recovery path. Keep `update-password` as a fallback for cases where the bootstrap email itself was forgotten.
+- **Troubleshooting → Locked out of `/_/`**: replace the `docker compose exec ... update-password` recipe with "edit `.env`, then `docker compose up -d pb`" as the primary recovery path. Keep `update-password` as a fallback for cases where the bootstrap email itself was forgotten.
 - **Project structure**: `.env.example` description grows from "HOST_PORT" to "HOST_PORT + PocketBase superuser credentials".
 
 ### Modified: `CLAUDE.md`
 
 - **How to run**: update the two-line summary so both local and production paths reference `.env` as the place credentials live (no more "visit `/_/` to create the first superuser" or "`docker compose exec ... upsert` for the first superuser").
 - **Architecture → Data flow → Auth (owner)**: add one sentence: "The bootstrap superuser is provisioned on every `pb` start from `PB_SUPERUSER_EMAIL` / `PB_SUPERUSER_PASSWORD` in `.env`."
-- **What to be careful about**: add a bullet — `.env` is the source of truth for the bootstrap superuser; changes made via `/_/` to that email get reverted on next `pb` restart. Rotate via `.env`, not via the UI.
+- **What to be careful about**: add a bullet — `.env` is the source of truth for the bootstrap superuser; changes made via `/_/` to that email get reverted the next time the `pb` container starts (whether via `up -d`, `restart`, or system reboot). Rotate via `.env`, not via the UI.
 
 ---
 
@@ -173,7 +173,7 @@ Already excludes `.env` (with `!.env.example` allow-listed). No change required.
    First boot after this change runs `upsert` against whatever email is in `.env`. If that email matches the existing superuser → password is synced to the `.env` value (effectively a forced rotation). If it's a different email → the old superuser is untouched and a second one is added. Neither is destructive; users with existing deployments should set `.env` to match their existing credentials to avoid confusion.
 
 2. **Password rotation visibility.**
-   In sync mode, any password change made via `/_/` is reverted on the next `pb` restart. The README and CLAUDE.md both call this out explicitly so it's not a surprise.
+   In sync mode, any password change made via `/_/` is reverted the next time the `pb` container starts — whether via `docker compose restart pb`, `docker compose up -d pb`, or a system reboot. (All three paths re-run the entrypoint, which calls `upsert` with the env vars cached on the running container, equal to the current `.env` when `.env` hasn't changed.) The README and CLAUDE.md both call this out explicitly so it's not a surprise.
 
 3. **Additional superusers.**
    The bootstrap manages exactly one superuser (the one whose email matches `PB_SUPERUSER_EMAIL`). Other superusers created later via the admin UI are not touched by the bootstrap.
@@ -203,7 +203,7 @@ After implementation, the following must all pass:
 2. `docker compose up` with `.env` present but `PB_SUPERUSER_PASSWORD=short` → `pb` exits with the "must be at least 10 characters" message; `web` does not become healthy.
 3. `docker compose up` with `.env` present but `PB_SUPERUSER_EMAIL=not-an-email` → `pb` exits with the "does not look like an email" message.
 4. `docker compose up` with valid `.env` (fresh `pb_data/`) → both services healthy; superuser auth at `/api/collections/_superusers/auth-with-password` succeeds with the `.env` credentials.
-5. Edit `.env` to a new password, `docker compose restart pb` → old password rejected, new password accepted on auth.
-6. Set a *different* email in `.env`, restart → new superuser created; old one still present (verifiable from `/_/`).
+5. Edit `.env` to a new password, `docker compose up -d pb` → old password rejected, new password accepted on auth. (Note: `docker compose restart pb` does NOT work for rotation — restart reuses the container's cached env vars from creation; only `up -d` recreates the container with fresh env from `.env`.)
+6. Set a *different* email in `.env`, `docker compose up -d pb` → new superuser created; old one still present (verifiable from `/_/`).
 7. `docker stop castiel-pb` → process exits cleanly within Docker's grace period (no `SIGKILL` after 10s, confirming `exec` + tini pass signals correctly).
 8. The frontend smoke checks from `CLAUDE.md`'s testing section all still pass.

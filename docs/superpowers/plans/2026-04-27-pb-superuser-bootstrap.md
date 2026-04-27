@@ -4,7 +4,7 @@
 
 **Goal:** Replace the manual first-superuser flow (admin-UI wizard or one-off `docker compose exec` upsert) with a declarative, `.env`-sourced bootstrap that runs on every `pb` container start and refuses to bring up the stack without valid credentials.
 
-**Architecture:** Two new env vars (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`) live in `.env` and are required by `docker-compose.yml` via `${VAR:?msg}` parameter expansion. A new `pb/entrypoint.sh` script — invoked through the existing `tini` ENTRYPOINT chain — re-validates the values (email shape, password ≥ 10 chars), runs `pocketbase superuser upsert`, then `exec`s `pocketbase serve`. `.env` is the single source of truth: edits + `docker compose restart pb` rotate the password.
+**Architecture:** Two new env vars (`PB_SUPERUSER_EMAIL`, `PB_SUPERUSER_PASSWORD`) live in `.env` and are required by `docker-compose.yml` via `${VAR:?msg}` parameter expansion. A new `pb/entrypoint.sh` script — invoked through the existing `tini` ENTRYPOINT chain — re-validates the values (email shape, password ≥ 10 chars), runs `pocketbase superuser upsert`, then `exec`s `pocketbase serve`. `.env` is the single source of truth: edits + `docker compose up -d pb` rotate the password. (`docker compose restart pb` reuses the container's cached env from creation time, so only `up -d` actually picks up `.env` changes.)
 
 **Tech Stack:** Docker Compose v2, BusyBox `ash` (`/bin/sh` in `alpine:3.20`), PocketBase v0.37 CLI, nginx (unchanged).
 
@@ -462,8 +462,10 @@ Expected: a JSON response starting with `{"token":"...` (the rest is the JWT and
 
 ```bash
 sed -i.tmp 's/^PB_SUPERUSER_PASSWORD=.*/PB_SUPERUSER_PASSWORD=newrotatedpassword/' .env && rm -f .env.tmp
-docker compose restart pb
+docker compose up -d pb
 ```
+
+Note: `docker compose restart pb` does NOT pick up `.env` changes — `restart` reuses the container's cached environment from creation time. Use `up -d` to recreate the container with fresh env vars.
 
 Wait for `pb` to be healthy again (a few seconds), then:
 
@@ -485,7 +487,7 @@ Expected: first call prints `400` (auth failed); second call prints `200`.
 
 ```bash
 sed -i.tmp 's/^PB_SUPERUSER_EMAIL=.*/PB_SUPERUSER_EMAIL=second-bootstrap@example.com/' .env && rm -f .env.tmp
-docker compose restart pb
+docker compose up -d pb
 ```
 
 Wait for `pb` healthy, then auth as the new email:
@@ -659,16 +661,18 @@ Go to <http://localhost:8080/>, click the 🔒 in the top-right, and sign in wit
 
 #### Rotating the password
 
-Edit `.env` and restart `pb`:
+Edit `.env`, then recreate the `pb` container so it picks up the new value:
 
 ```sh
 $EDITOR .env                    # change PB_SUPERUSER_PASSWORD (still >= 10 chars)
-docker compose restart pb
+docker compose up -d pb
 ```
 
-The next start re-runs `upsert` with the new password. The old one stops working immediately.
+The recreated container re-runs `upsert` with the new password. The old one stops working immediately.
 
-> **Heads up — `.env` wins.** If you change the password through the `/_/` admin UI for the email in `.env`, the next `pb` restart will revert it to the `.env` value. There's exactly one canonical place for the bootstrap credential. Use the admin UI freely for moderating the guestbook, inspecting records, etc., but rotate the bootstrap password through `.env`.
+> **Why `up -d` and not `restart`?** `docker compose restart pb` reuses the container's cached environment from creation time — so it does NOT pick up changes to `.env`. Only `docker compose up -d pb` recreates the container with fresh env vars.
+>
+> **Heads up — `.env` wins.** If you change the password through the `/_/` admin UI for the email in `.env`, the next time `pb` starts (whether via `up -d`, `restart`, or a reboot) will revert it to the `.env` value. There's exactly one canonical place for the bootstrap credential. Use the admin UI freely for moderating the guestbook, inspecting records, etc., but rotate the bootstrap password through `.env`.
 >
 > Additional superusers created later via `/_/` (with a different email) are never touched by the bootstrap.
 ````
@@ -738,7 +742,7 @@ If you got past the verification step above, the bootstrap superuser already exi
 
 > **Pick a strong password.** It's the one credential between visitors and edit access — there is no second factor, no rate-limited brute-force protection beyond PocketBase's small built-in throttle, and no recovery flow if you lose it. A long passphrase managed by a password manager is the right shape.
 
-To rotate the password later: edit `.env`, then `docker compose restart pb`. Don't change it through the `/_/` admin UI for the bootstrap email — the next `pb` restart will revert it to the `.env` value. Other superusers (different email) created via `/_/` are not touched by the bootstrap.
+To rotate the password later: edit `.env`, then `docker compose up -d pb` (this recreates the container with the new env; `docker compose restart pb` won't work — restart reuses cached env). Don't change it through the `/_/` admin UI for the bootstrap email — the next time `pb` starts will revert it to the `.env` value. Other superusers (different email) created via `/_/` are not touched by the bootstrap.
 ````
 
 - [ ] **Step 4.5: Update the "Locked out of `/_/` admin (forgot superuser password)" troubleshooting entry (around lines 474-479).**
@@ -758,10 +762,10 @@ Replace with:
 
 ````markdown
 **Locked out of `/_/` admin (forgot superuser password).**
-For the bootstrap superuser, edit `.env` to a new password and restart `pb` — the entrypoint re-runs `upsert` and your new password takes effect:
+For the bootstrap superuser, edit `.env` to a new password and recreate the `pb` container so it picks up the new env — the entrypoint re-runs `upsert` and your new password takes effect:
 ```sh
 $EDITOR .env                    # set PB_SUPERUSER_PASSWORD to a fresh value
-docker compose restart pb
+docker compose up -d pb         # not `restart` — restart reuses cached env from creation
 ```
 For an additional superuser created via `/_/` (different email from `.env`), use the CLI directly:
 ```sh
@@ -872,7 +876,7 @@ Replace with:
 Find the existing bulleted list under `## What to be careful about`. Add this bullet **immediately after** the bullet about `pb_data/`:
 
 ```markdown
-- **`.env` is the source of truth for the bootstrap superuser.** `pb/entrypoint.sh` re-runs `pocketbase superuser upsert` on every container start using `PB_SUPERUSER_EMAIL` / `PB_SUPERUSER_PASSWORD`. If you change the password through the `/_/` admin UI for that email, the next `docker compose restart pb` will revert it. Rotate via `.env`, not via the UI. Additional superusers (different email) created via `/_/` are unaffected.
+- **`.env` is the source of truth for the bootstrap superuser.** `pb/entrypoint.sh` re-runs `pocketbase superuser upsert` on every container start using `PB_SUPERUSER_EMAIL` / `PB_SUPERUSER_PASSWORD`. If you change the password through the `/_/` admin UI for that email, the next time `pb` starts (via `docker compose up -d`, `docker compose restart`, or a system reboot) will revert it. Rotate via `.env` and `docker compose up -d pb` (not `restart` — restart reuses cached env). Additional superusers (different email) created via `/_/` are unaffected.
 ```
 
 (Insert position: right after the `pb_data/` bullet, before whatever bullet comes next.)
@@ -897,7 +901,7 @@ from PB_SUPERUSER_EMAIL/PASSWORD in .env on every pb start (not via
 the /_/ install wizard or a one-off 'docker compose exec' upsert).
 Adds a 'What to be careful about' bullet warning that .env is
 canonical — UI password changes for the bootstrap email get
-reverted on the next pb restart."
+reverted the next time the pb container starts."
 ```
 
 ---
