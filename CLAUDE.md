@@ -66,10 +66,24 @@ There is no longer a hardcoded passcode. The lock icon opens an email + password
 
 ## How to run
 
-- Local dev: `docker compose up --build` (both services). On first run, visit `http://localhost:8080/_/` to create the superuser, then `http://localhost:8080/` to use the site.
-- Mac mini production: `docker compose up -d --build` on the server. Create the superuser with `docker compose exec pb pocketbase superuser upsert email password`.
+`README.md` is the source of truth for setup — it has full step-by-step instructions, expected output, verification checklists, and troubleshooting. The two-line version:
 
-Full instructions, including backup procedure and HTTPS upgrade path, are in `README.md`.
+- **Local dev** (laptop): `docker compose up --build`, then `http://localhost:8080/_/` to create the first superuser, then `http://localhost:8080/` to use the site. Detailed flow in [README.md → Local development](./README.md#local-development-dev-instance).
+- **Mac mini production** (headless server): `docker compose up -d --build` on the server, then `docker compose exec pb pocketbase superuser upsert email password` for the first superuser. Detailed flow in [README.md → Production — Mac mini headless server](./README.md#production--mac-mini-headless-server), including backup, HTTPS via Caddy, auto-start on reboot, and the security checklist.
+
+Common operational commands once the stack is up:
+
+| Goal | Command |
+|---|---|
+| Start in background | `docker compose up -d` |
+| Stop | `docker compose down` |
+| Tail all logs | `docker compose logs -f` |
+| Restart just nginx | `docker compose restart web` |
+| Apply a new migration | edit `pb/pb_migrations/000N_*.js`, then `docker compose restart pb` |
+| Rebuild after frontend / `nginx.conf` edits | `docker compose up -d --build web` |
+| Rebuild after PocketBase version bump | edit `pb/Dockerfile` `ARG PB_VERSION=`, then `docker compose up -d --build pb` |
+| Backup `pb_data/` (cold) | `docker compose stop pb && tar -czf bk.tgz pb_data/ && docker compose start pb` |
+| Reset local state | `docker compose down && rm -rf pb_data && docker compose up --build` |
 
 ## Testing / verification
 
