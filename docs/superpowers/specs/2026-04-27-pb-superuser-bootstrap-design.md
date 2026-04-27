@@ -1,7 +1,7 @@
 # PocketBase superuser bootstrap from `.env`
 
 **Date:** 2026-04-27
-**Status:** Approved (pending user spec review)
+**Status:** Implemented (merged via `feat/pb-superuser-bootstrap`)
 **Scope:** Replace the manual "first-superuser" flow (admin-UI wizard or one-off CLI command) with a declarative `.env`-driven bootstrap that is enforced on every boot.
 
 ---

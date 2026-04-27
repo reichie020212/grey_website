@@ -471,6 +471,7 @@ All endpoints are PocketBase v0.37 standard. nginx proxies `/api/...` and `/_/..
 ├── .env.example           # HOST_PORT + PocketBase superuser bootstrap credentials
 ├── pb/
 │   ├── Dockerfile         # PocketBase image (alpine + downloaded PB binary, pinned via PB_VERSION arg)
+│   ├── entrypoint.sh      # validates PB_SUPERUSER_* env, upserts bootstrap superuser, execs pocketbase serve
 │   └── pb_migrations/
 │       └── 0001_init.js   # creates content/photos/guestbook collections + seed
 ├── pb_data/               # PB SQLite db + uploaded files (gitignored, bind-mounted at runtime)
