@@ -33,12 +33,12 @@ A single-page biography website for **Castiel "Lulu" Grey Butay**. Visitors get 
 - **Content** (about text, timeline, family, letter, routine, wishes, gallery metadata, baby info) → singleton record in the `content` collection. Frontend loads with `GET /api/collections/content/records?perPage=1`, saves with `PATCH /api/collections/content/records/{id}`.
 - **Photos** → one record per slot in the `photos` collection. Slot is a unique text key (`hero`, `gallery-0…N`, `fam-0`, `fam-1`, `fam-baby`). `image` is a single uploaded file. URLs are constructed as `/api/files/{collectionId}/{recordId}/{filename}`.
 - **Guestbook** → individual records in the `guestbook` collection. Anyone can `POST` (open create rule). Owner can delete via the PB admin UI.
-- **Auth (owner)** → `POST /api/collections/_superusers/auth-with-password` returns a JWT, stored in `localStorage["castiel-pb-token-v1"]` and sent as `Authorization: <token>` on writes. `auth-refresh` is called on app startup to drop a stale token.
+- **Auth (owner)** → `POST /api/collections/_superusers/auth-with-password` returns a JWT, stored in `localStorage["castiel-pb-token-v1"]` and sent as `Authorization: <token>` on writes. `auth-refresh` is called on app startup to drop a stale token. The bootstrap superuser itself is provisioned on every `pb` container start by `pb/entrypoint.sh`, which runs `pocketbase superuser upsert` using `PB_SUPERUSER_EMAIL` / `PB_SUPERUSER_PASSWORD` from `.env`.
 - **Tweaks panel** state stays in `localStorage` (per-visitor preferences, not synced).
 
 ### Edit-lock
 
-There is no longer a hardcoded passcode. The lock icon opens an email + password modal that calls PocketBase's superuser auth. A valid token in `localStorage` is what `unlocked === true` means; the same token gates every write request via the `Authorization` header.
+There is no longer a hardcoded passcode. The lock icon opens an email + password modal that calls PocketBase's superuser auth. A valid token in `localStorage` is what `unlocked === true` means; the same token gates every write request via the `Authorization` header. The accepted email + password are whatever's in `.env` as `PB_SUPERUSER_EMAIL` / `PB_SUPERUSER_PASSWORD` — that's how the bootstrap superuser is provisioned at container start.
 
 ## Conventions
 
@@ -56,6 +56,7 @@ There is no longer a hardcoded passcode. The lock icon opens an email + password
 - **Do not break the `EDITMODE-BEGIN`/`EDITMODE-END` JSON marker block** in `app.jsx`. The Tweaks panel parses the source between those markers — the comments and the JSON shape between them must stay valid.
 - **Do not change `pb/pb_migrations/0001_init.js` after deploying.** PB records applied migrations in its DB and won't re-run an edited 0001. Add `0002_…js`, `0003_…js`, etc. for any schema changes.
 - **`pb_data/` is the database.** Never commit it, never delete it without backing up first. It contains the SQLite db, uploaded photos, and PocketBase settings.
+- **`.env` is the source of truth for the bootstrap superuser.** `pb/entrypoint.sh` re-runs `pocketbase superuser upsert` on every container start using `PB_SUPERUSER_EMAIL` / `PB_SUPERUSER_PASSWORD`. If you change the password through the `/_/` admin UI for that email, the next time `pb` starts (via `docker compose up -d`, `docker compose restart`, or a system reboot) will revert it. Rotate via `.env` and `docker compose up -d pb` (not `restart` — restart reuses cached env). Additional superusers (different email) created via `/_/` are unaffected.
 - **Keep the localStorage key `castiel-pb-token-v1`.** Renaming it logs every owner out on next deploy.
 - **Do not introduce a JS bundler** unless explicitly asked. If you do, you must also rewrite `index.html`'s script tags and the Dockerfile's COPY list.
 - **Do not rename existing files.** `index.html`, `app.jsx`, `tweaks-panel.jsx`, `styles.css` are referenced by name from `index.html` and `Dockerfile`.
@@ -68,8 +69,8 @@ There is no longer a hardcoded passcode. The lock icon opens an email + password
 
 `README.md` is the source of truth for setup — it has full step-by-step instructions, expected output, verification checklists, and troubleshooting. The two-line version:
 
-- **Local dev** (laptop): `docker compose up --build`, then `http://localhost:8080/_/` to create the first superuser, then `http://localhost:8080/` to use the site. Detailed flow in [README.md → Local development](./README.md#local-development-dev-instance).
-- **Mac mini production** (headless server): `docker compose up -d --build` on the server, then `docker compose exec pb pocketbase superuser upsert email password` for the first superuser. Detailed flow in [README.md → Production — Mac mini headless server](./README.md#production--mac-mini-headless-server), including backup, HTTPS via Caddy, auto-start on reboot, and the security checklist.
+- **Local dev** (laptop): `cp .env.example .env`, fill in `PB_SUPERUSER_EMAIL`/`PB_SUPERUSER_PASSWORD`, then `docker compose up --build`, then `http://localhost:8080/` to use the site. The bootstrap superuser is auto-provisioned from `.env` on each `pb` start. Detailed flow in [README.md → Local development](./README.md#local-development-dev-instance).
+- **Mac mini production** (headless server): same `.env` flow, then `docker compose up -d --build`. No separate "create the first superuser" step — `pb`'s entrypoint runs `pocketbase superuser upsert` with `.env` values before serving traffic. Detailed flow in [README.md → Production — Mac mini headless server](./README.md#production--mac-mini-headless-server), including backup, HTTPS via Caddy, auto-start on reboot, and the security checklist.
 
 Common operational commands once the stack is up:
 
