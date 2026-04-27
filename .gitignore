@@ -1,0 +1,12 @@
+# PocketBase data — SQLite db and uploaded files. Bind-mounted at runtime,
+# never committed.
+pb_data/
+
+# Local env overrides
+.env
+!.env.example
+
+# OS / editor
+.DS_Store
+*.swp
+*.swo

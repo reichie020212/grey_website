@@ -4,6 +4,9 @@ services:
     image: castiel-site:latest
     container_name: castiel-site
     restart: unless-stopped
+    depends_on:
+      pb:
+        condition: service_healthy
     ports:
       - "${HOST_PORT:-8080}:80"
     healthcheck:
@@ -12,3 +15,25 @@ services:
       timeout: 3s
       retries: 3
       start_period: 5s
+
+  pb:
+    build:
+      context: ./pb
+    image: castiel-pb:latest
+    container_name: castiel-pb
+    restart: unless-stopped
+    # Not published — only nginx (via the `web` service on the same docker
+    # network) reaches PocketBase. The admin UI is exposed through nginx at /_/.
+    expose:
+      - "8090"
+    volumes:
+      # SQLite db + uploaded files. Bind mount so the host can `tar` it for backup.
+      - ./pb_data:/pb/pb_data
+      # Migrations are read-only — PB only loads them, never writes.
+      - ./pb/pb_migrations:/pb/pb_migrations:ro
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://127.0.0.1:8090/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
