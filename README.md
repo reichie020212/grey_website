@@ -149,16 +149,18 @@ rm -rf pb_data
 docker compose up --build
 ```
 
-`pb_data/` is gitignored — wiping it only loses your local edits and uploaded photos.
+`pb_data/` is gitignored — wiping it only loses your local edits and uploaded photos. (If you also deleted `.env`, restore it first: `cp .env.example .env && $EDITOR .env` and re-fill `PB_SUPERUSER_*`. The stack will refuse to start without credentials.)
 
 ### Common gotchas
 
 - **Port 8080 already in use.** Set a different port:
   ```sh
+  # If you don't have .env yet, start from the example:
   cp .env.example .env
-  echo 'HOST_PORT=9080' > .env
+  $EDITOR .env   # set HOST_PORT=9080 (and fill in PB_SUPERUSER_* if not already)
   docker compose up -d --build
   ```
+  (If you already have `.env` with credentials, just edit `HOST_PORT` in place — don't `echo > .env`, that wipes the credentials too.)
 - **Browser still showing old code after edit.** Shouldn't happen — `.jsx` and `.css` are `no-cache`. If it does, hard-reload (Cmd-Shift-R / Ctrl-Shift-R) bypasses any sticky session cache.
 - **`save failed: 403 Forbidden` flash right after first login.** Cosmetic — the next save (your next edit) succeeds. The pill clears as soon as a real edit lands.
 - **Babel "precompile for production" warning in console.** Expected. It's the in-browser Babel telling you it's slower than a real bundler. Safe to ignore for this site.
@@ -274,6 +276,13 @@ docker compose up -d --build
 
 Compose detects the rebuilt image, recreates the container, and rolls in the new version. Migrations run automatically on `pb` startup; already-applied ones are skipped.
 
+> **One-time step when upgrading from a pre-bootstrap version:** the `pb` container now requires `PB_SUPERUSER_EMAIL` / `PB_SUPERUSER_PASSWORD` in `.env` to start. Before `git pull`, note your existing superuser credentials, then:
+> ```sh
+> cp .env.example .env
+> $EDITOR .env    # set PB_SUPERUSER_* to your existing live credentials
+> ```
+> Setting `.env` to your **existing** credentials means the bootstrap upserts the same values that are already in the database — no change for your users. If you set different credentials, the bootstrap will rotate the password (same email) or add a second superuser (different email).
+
 If the update fails health checks, roll back:
 
 ```sh
@@ -353,11 +362,15 @@ That snapshots at 03:00, keeps 30 days. If you want consistency over uptime, pre
 ```sh
 git clone <repo-url> grey_website-restore-test
 cd grey_website-restore-test
+cp .env.example .env
+$EDITOR .env                                  # fill in PB_SUPERUSER_* with the same credentials as your live stack
 tar -xzf path/to/castiel-pb-YYYY-MM-DD.tgz   # extracts into ./pb_data/
 docker compose up -d --build
 curl http://localhost:8080/api/health        # should be healthy
 # log in with the same credentials, confirm content is intact
 ```
+
+> Use the **same** `PB_SUPERUSER_EMAIL` / `PB_SUPERUSER_PASSWORD` as your live stack. The bootstrap will upsert that email's password to the `.env` value on first start; if your `.env` matches the live credentials, nothing changes (idempotent). If you set different credentials, the restored stack will rotate the password to the new value (still works, just diverges from your live one).
 
 ### Optional: HTTPS + a real domain via Caddy
 
