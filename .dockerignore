@@ -1,0 +1,15 @@
+.git
+.gitignore
+.github
+.DS_Store
+node_modules
+.env
+.env.*
+!.env.example
+*.md
+screenshots
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.log
