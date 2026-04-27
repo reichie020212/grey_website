@@ -13,6 +13,8 @@ RUN wget -O pb.zip "https://github.com/pocketbase/pocketbase/releases/download/v
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates wget tini
 COPY --from=fetcher /tmp/pocketbase /usr/local/bin/pocketbase
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 WORKDIR /pb
 
 EXPOSE 8090
@@ -20,6 +22,8 @@ EXPOSE 8090
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --spider --quiet http://127.0.0.1:8090/api/health || exit 1
 
-# tini reaps zombies; pocketbase serve runs the embedded SQLite + HTTP server.
+# tini reaps zombies; entrypoint.sh validates env vars, upserts the bootstrap
+# superuser from PB_SUPERUSER_EMAIL/PASSWORD, then `exec`s pocketbase serve so
+# tini delivers signals (SIGTERM from `docker stop`) directly to PocketBase.
 ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["pocketbase", "serve", "--http=0.0.0.0:8090", "--dir=/pb/pb_data", "--migrationsDir=/pb/pb_migrations"]
+CMD ["/entrypoint.sh"]

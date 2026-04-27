@@ -60,6 +60,11 @@ This is what to run on your laptop while iterating on the code. Everything runs 
 git clone <this-repo-url> grey_website
 cd grey_website
 
+# Required: set the bootstrap superuser credentials. The pb container will
+# refuse to start without these.
+cp .env.example .env
+$EDITOR .env   # fill in PB_SUPERUSER_EMAIL and PB_SUPERUSER_PASSWORD (>= 10 chars)
+
 docker compose up --build
 ```
 
@@ -70,6 +75,8 @@ You should see Docker build both images, then both containers report healthy:
  ✔ Container castiel-site  Healthy
 ```
 
+If you forgot the `.env`, `docker compose up` exits immediately with `PB_SUPERUSER_EMAIL must be set in .env (copy .env.example to .env and fill it in)` — that's the compose-level guard doing its job.
+
 In another terminal (the first one is now tailing logs):
 
 ```sh
@@ -77,20 +84,28 @@ curl http://localhost:8080/             # the static index.html
 curl http://localhost:8080/api/health   # {"message":"API is healthy.","code":200,"data":{}}
 ```
 
-### Create your owner account
+### Sign in as the owner
 
-PocketBase needs at least one **superuser** before you can sign in to edit. On a laptop, the easiest path is the admin UI's first-run wizard:
+The bootstrap superuser is whatever you put in `.env`. There's no install wizard or one-off CLI step — the `pb` container ran `pocketbase superuser upsert` with your `.env` values during startup.
+
+Go to <http://localhost:8080/>, click the 🔒 in the top-right, and sign in with the email + password from `.env`. The icon flips to ✎ and you're in edit mode.
+
+#### Rotating the password
+
+Edit `.env`, then recreate the `pb` container so it picks up the new value:
 
 ```sh
-open http://localhost:8080/_/    # macOS — or paste into a browser
+$EDITOR .env                    # change PB_SUPERUSER_PASSWORD (still >= 10 chars)
+docker compose up -d pb
 ```
 
-Fill in an email + password and submit. Then go to <http://localhost:8080/>, click the 🔒 in the top-right, and sign in with the same credentials. The icon flips to ✎ and you're in edit mode.
+The recreated container re-runs `upsert` with the new password. The old one stops working immediately.
 
-> **CLI alternative** — if your browser can't reach `/_/` for some reason:
-> ```sh
-> docker compose exec pb pocketbase superuser upsert you@example.com 'a-strong-password'
-> ```
+> **Why `up -d` and not `restart`?** `docker compose restart pb` reuses the container's cached environment from creation time — so it does NOT pick up changes to `.env`. Only `docker compose up -d pb` recreates the container with fresh env vars.
+>
+> **Heads up — `.env` wins.** If you change the password through the `/_/` admin UI for the email in `.env`, the next time `pb` starts (whether via `up -d`, `restart`, or a reboot) will revert it to the `.env` value. There's exactly one canonical place for the bootstrap credential. Use the admin UI freely for moderating the guestbook, inspecting records, etc., but rotate the bootstrap password through `.env`.
+>
+> Additional superusers created later via `/_/` (with a different email) are never touched by the bootstrap.
 
 ### Daily workflow
 
@@ -134,16 +149,18 @@ rm -rf pb_data
 docker compose up --build
 ```
 
-`pb_data/` is gitignored — wiping it only loses your local edits and uploaded photos.
+`pb_data/` is gitignored — wiping it only loses your local edits and uploaded photos. (If you also deleted `.env`, restore it first: `cp .env.example .env && $EDITOR .env` and re-fill `PB_SUPERUSER_*`. The stack will refuse to start without credentials.)
 
 ### Common gotchas
 
 - **Port 8080 already in use.** Set a different port:
   ```sh
+  # If you don't have .env yet, start from the example:
   cp .env.example .env
-  echo 'HOST_PORT=9080' > .env
+  $EDITOR .env   # set HOST_PORT=9080 (and fill in PB_SUPERUSER_* if not already)
   docker compose up -d --build
   ```
+  (If you already have `.env` with credentials, just edit `HOST_PORT` in place — don't `echo > .env`, that wipes the credentials too.)
 - **Browser still showing old code after edit.** Shouldn't happen — `.jsx` and `.css` are `no-cache`. If it does, hard-reload (Cmd-Shift-R / Ctrl-Shift-R) bypasses any sticky session cache.
 - **`save failed: 403 Forbidden` flash right after first login.** Cosmetic — the next save (your next edit) succeeds. The pill clears as soon as a real edit lands.
 - **Babel "precompile for production" warning in console.** Expected. It's the in-browser Babel telling you it's slower than a real bundler. Safe to ignore for this site.
@@ -166,7 +183,8 @@ ssh mac-mini
 git clone <this-repo-url> grey_website
 cd grey_website
 
-# Optional — change the host port (default 8080)
+# Required — set bootstrap superuser credentials (and optionally HOST_PORT).
+# The stack will refuse to start without PB_SUPERUSER_EMAIL/PASSWORD.
 cp .env.example .env
 $EDITOR .env
 
@@ -208,16 +226,13 @@ curl 'http://localhost:8080/api/collections/content/records?perPage=1' | head -c
 
 If any of the four fails, jump to [Troubleshooting](#troubleshooting).
 
-### Create the first owner account (CLI — recommended for headless)
+### The owner account is already created
 
-```sh
-docker compose exec pb pocketbase superuser upsert you@example.com 'a-strong-password'
-#    expect: Successfully saved superuser "you@example.com"!
-```
+If you got past the verification step above, the bootstrap superuser already exists — `pb`'s entrypoint ran `pocketbase superuser upsert` using `PB_SUPERUSER_EMAIL` / `PB_SUPERUSER_PASSWORD` from `.env` before serving traffic. Sign in at `http://<mac-mini-ip>:8080/` (or wherever you've pointed your domain) with those credentials.
 
 > **Pick a strong password.** It's the one credential between visitors and edit access — there is no second factor, no rate-limited brute-force protection beyond PocketBase's small built-in throttle, and no recovery flow if you lose it. A long passphrase managed by a password manager is the right shape.
 
-If you'd rather use the admin UI, point a browser on the same LAN at `http://<mac-mini-ip>:8080/_/` and follow the first-run prompts. The CLI is just safer for fully-headless setups.
+To rotate the password later: edit `.env`, then `docker compose up -d pb` (this recreates the container with the new env; `docker compose restart pb` won't work — restart reuses cached env). Don't change it through the `/_/` admin UI for the bootstrap email — the next time `pb` starts will revert it to the `.env` value. Other superusers (different email) created via `/_/` are not touched by the bootstrap.
 
 ### Networking — making it reachable
 
@@ -260,6 +275,13 @@ docker compose up -d --build
 ```
 
 Compose detects the rebuilt image, recreates the container, and rolls in the new version. Migrations run automatically on `pb` startup; already-applied ones are skipped.
+
+> **One-time step when upgrading from a pre-bootstrap version:** the `pb` container now requires `PB_SUPERUSER_EMAIL` / `PB_SUPERUSER_PASSWORD` in `.env` to start. Before `git pull`, note your existing superuser credentials, then:
+> ```sh
+> cp .env.example .env
+> $EDITOR .env    # set PB_SUPERUSER_* to your existing live credentials
+> ```
+> Setting `.env` to your **existing** credentials means the bootstrap upserts the same values that are already in the database — no change for your users. If you set different credentials, the bootstrap will rotate the password (same email) or add a second superuser (different email).
 
 If the update fails health checks, roll back:
 
@@ -340,11 +362,15 @@ That snapshots at 03:00, keeps 30 days. If you want consistency over uptime, pre
 ```sh
 git clone <repo-url> grey_website-restore-test
 cd grey_website-restore-test
+cp .env.example .env
+$EDITOR .env                                  # fill in PB_SUPERUSER_* with the same credentials as your live stack
 tar -xzf path/to/castiel-pb-YYYY-MM-DD.tgz   # extracts into ./pb_data/
 docker compose up -d --build
 curl http://localhost:8080/api/health        # should be healthy
 # log in with the same credentials, confirm content is intact
 ```
+
+> Use the **same** `PB_SUPERUSER_EMAIL` / `PB_SUPERUSER_PASSWORD` as your live stack. The bootstrap will upsert that email's password to the `.env` value on first start; if your `.env` matches the live credentials, nothing changes (idempotent). If you set different credentials, the restored stack will rotate the password to the new value (still works, just diverges from your live one).
 
 ### Optional: HTTPS + a real domain via Caddy
 
@@ -442,9 +468,10 @@ All endpoints are PocketBase v0.37 standard. nginx proxies `/api/...` and `/_/..
 ├── docker-compose.yml     # web + pb services
 ├── .dockerignore
 ├── .gitignore
-├── .env.example           # HOST_PORT
+├── .env.example           # HOST_PORT + PocketBase superuser bootstrap credentials
 ├── pb/
 │   ├── Dockerfile         # PocketBase image (alpine + downloaded PB binary, pinned via PB_VERSION arg)
+│   ├── entrypoint.sh      # validates PB_SUPERUSER_* env, upserts bootstrap superuser, execs pocketbase serve
 │   └── pb_migrations/
 │       └── 0001_init.js   # creates content/photos/guestbook collections + seed
 ├── pb_data/               # PB SQLite db + uploaded files (gitignored, bind-mounted at runtime)
@@ -472,11 +499,17 @@ Did you rebuild the `web` image? `docker compose up -d --build web`. The static 
 Refresh the page once. PB tokens have a generous TTL but if your laptop slept overnight the stored token may be expired. If it persists, hit the lock again and re-enter credentials.
 
 **Locked out of `/_/` admin (forgot superuser password).**
-Recover from the Mac mini shell:
+For the bootstrap superuser, edit `.env` to a new password and recreate the `pb` container so it picks up the new env — the entrypoint re-runs `upsert` and your new password takes effect:
 ```sh
-docker compose exec pb pocketbase superuser update-password your@email '<new-password>'
+$EDITOR .env                    # set PB_SUPERUSER_PASSWORD to a fresh value
+docker compose up -d pb         # not `restart` — restart reuses cached env from creation
 ```
-Or upsert with `pocketbase superuser upsert your@email '<new-password>'` to overwrite.
+For an additional superuser created via `/_/` (different email from `.env`), use the CLI directly:
+```sh
+docker compose exec pb pocketbase superuser update-password their@email '<new-password>'
+# or, to overwrite-create:
+docker compose exec pb pocketbase superuser upsert their@email '<new-password>'
+```
 
 **`pocketbase superuser ...` prints `Error: ... record not found`.**
 You're trying `update-password` on an account that doesn't exist. Use `upsert` instead — it creates if missing.

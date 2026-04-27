@@ -26,6 +26,13 @@ services:
     # network) reaches PocketBase. The admin UI is exposed through nginx at /_/.
     expose:
       - "8090"
+    environment:
+      # Bootstrap superuser, required on every boot. The pb container runs
+      # `pocketbase superuser upsert` with these before serving traffic.
+      # The `${VAR:?...}` form aborts `docker compose up` if either is unset
+      # or empty, so the stack never starts without valid credentials.
+      PB_SUPERUSER_EMAIL: ${PB_SUPERUSER_EMAIL:?PB_SUPERUSER_EMAIL must be set in .env (copy .env.example to .env and fill it in)}
+      PB_SUPERUSER_PASSWORD: ${PB_SUPERUSER_PASSWORD:?PB_SUPERUSER_PASSWORD must be set in .env (min 10 chars; copy .env.example to .env and fill it in)}
     volumes:
       # SQLite db + uploaded files. Bind mount so the host can `tar` it for backup.
       - ./pb_data:/pb/pb_data
