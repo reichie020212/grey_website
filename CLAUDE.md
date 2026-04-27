@@ -18,9 +18,10 @@ A single-page biography website for **Castiel "Lulu" Grey Butay**. Visitors get 
 ├── Dockerfile             # frontend image (nginx:alpine + static assets)
 ├── docker-compose.yml     # two services: web (nginx) + pb (PocketBase)
 ├── .dockerignore
-├── .env.example           # HOST_PORT — port the host exposes (default 8080)
+├── .env.example           # HOST_PORT + PocketBase superuser bootstrap credentials
 ├── pb/
 │   ├── Dockerfile         # PocketBase image (alpine + binary fetched from upstream releases, pinned via PB_VERSION arg)
+│   ├── entrypoint.sh      # validates PB_SUPERUSER_* env, upserts bootstrap superuser, execs pocketbase serve
 │   └── pb_migrations/
 │       └── 0001_init.js   # creates content/photos/guestbook collections + seeds defaults
 ├── pb_data/               # SQLite db + uploaded files — bind-mounted from host, gitignored
@@ -80,7 +81,7 @@ Common operational commands once the stack is up:
 | Stop | `docker compose down` |
 | Tail all logs | `docker compose logs -f` |
 | Restart just nginx | `docker compose restart web` |
-| Apply a new migration | edit `pb/pb_migrations/000N_*.js`, then `docker compose restart pb` |
+| Apply a new migration | edit `pb/pb_migrations/000N_*.js`, then `docker compose restart pb` (no env change, so `restart` is fine here) |
 | Rebuild after frontend / `nginx.conf` edits | `docker compose up -d --build web` |
 | Rebuild after PocketBase version bump | edit `pb/Dockerfile` `ARG PB_VERSION=`, then `docker compose up -d --build pb` |
 | Backup `pb_data/` (cold) | `docker compose stop pb && tar -czf bk.tgz pb_data/ && docker compose start pb` |
