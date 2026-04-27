@@ -450,14 +450,19 @@ function About({ content, setContent, editing }) {
 }
 
 /* ============== Stats card ============== */
-function Stats({ content }) {
+function Stats({ content, setContent }) {
   const age = ageFromBirth(content.baby.birthdate);
   const stats = content.stats.map((s) => {
-    if (s.num === "AUTO_DAYS") return { ...s, num: age.days };
-    if (s.num === "AUTO_MONTHS") return { ...s, num: age.months };
-    if (s.num === "AUTO_WEEKS") return { ...s, num: age.weeks };
+    if (s.num === "AUTO_DAYS") return { ...s, num: age.days, computed: true };
+    if (s.num === "AUTO_MONTHS") return { ...s, num: age.months, computed: true };
+    if (s.num === "AUTO_WEEKS") return { ...s, num: age.weeks, computed: true };
     return s;
   });
+  const updateStat = (i, k, v) => {
+    const next = [...content.stats];
+    next[i] = { ...next[i], [k]: v };
+    setContent({ ...content, stats: next });
+  };
   return (
     <section className="s">
       <div className="s-head">
@@ -471,8 +476,14 @@ function Stats({ content }) {
         {stats.map((s, i) => (
           <div className="stat" key={i}>
             <div>
-              <span className="stat-num">{s.num}</span>
-              {s.unit && <span className="stat-unit">{s.unit}</span>}
+              {s.computed ? (
+                <span className="stat-num">{s.num}</span>
+              ) : (
+                <Editable as="span" className="stat-num" value={String(s.num)} onChange={(v) => updateStat(i, "num", v)} />
+              )}
+              {s.computed
+                ? s.unit && <span className="stat-unit">{s.unit}</span>
+                : <Editable as="span" className="stat-unit" value={s.unit || ""} onChange={(v) => updateStat(i, "unit", v)} placeholder="unit" />}
             </div>
             <div className="stat-lbl">{s.lbl}</div>
           </div>
@@ -1024,7 +1035,7 @@ function App() {
       />
       <Hero content={content} setContent={setContent} photos={photos} onUpload={onPhotoUpload} editing={editing} />
       <About content={content} setContent={setContent} editing={editing} />
-      <Stats content={content} />
+      <Stats content={content} setContent={setContent} />
       <Timeline content={content} setContent={setContent} editing={editing} />
       <Gallery content={content} setContent={setContent} photos={photos} onUpload={onPhotoUpload} editing={editing} />
       <Family content={content} setContent={setContent} photos={photos} onUpload={onPhotoUpload} editing={editing} />
