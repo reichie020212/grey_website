@@ -120,6 +120,16 @@ async function uploadPhoto(slot, file, existingId) {
   return { id: rec.id, url: pbFileUrl(rec, rec.image) };
 }
 
+const deletePhoto = (id) =>
+  apiFetch(`/collections/photos/records/${id}`, { method: "DELETE" });
+
+async function renamePhotoSlot(id, newSlot) {
+  const fd = new FormData();
+  fd.append("slot", newSlot);
+  const rec = await apiFetch(`/collections/photos/records/${id}`, { method: "PATCH", form: fd });
+  return { id: rec.id, url: pbFileUrl(rec, rec.image) };
+}
+
 const fetchGuestbook = () =>
   apiFetch("/collections/guestbook/records?sort=-created&perPage=200").then((o) => o.items);
 
@@ -149,9 +159,12 @@ function formatBirthdate(d) {
 }
 
 /* ============== Editable text component ============== */
-function Editable({ value, onChange, multiline = false, className = "", as = "span", placeholder = "" }) {
+function Editable({ value, onChange, editing = false, multiline = false, className = "", as = "span", placeholder = "" }) {
   const Tag = as;
   const ref = useRef(null);
+  if (!editing) {
+    return <Tag className={className}>{value}</Tag>;
+  }
   const onBlur = () => {
     if (!ref.current) return;
     const v = multiline ? ref.current.innerText : ref.current.innerText.replace(/\n/g, " ").trim();
@@ -300,7 +313,7 @@ function TopBar({ dark, setDark, music, setMusic, editing, unlocked, onLockClick
     <div className="topbar">
       <div className="topbar-brand">
         <span className="dot"></span>
-        <span>Castiel · Lulu</span>
+        <span>Grey · Lulu</span>
       </div>
       <nav className="topbar-nav">
         <a href="#about">About</a>
@@ -348,15 +361,15 @@ function Hero({ content, setContent, photos, onUpload, editing }) {
           <Editable as="span" value={baby.fullName.split(" ")[0]} onChange={(v) => {
             const rest = baby.fullName.split(" ").slice(1).join(" ");
             update("fullName", `${v} ${rest}`.trim());
-          }} />
+          }} editing={editing} />
           <br/>
           <Editable as="span" value={baby.fullName.split(" ").slice(1).join(" ")} onChange={(v) => {
             const first = baby.fullName.split(" ")[0];
             update("fullName", `${first} ${v}`.trim());
-          }} />
-          <Editable as="span" className="lulu" value={`"${baby.nickname}"`} onChange={(v) => update("nickname", v.replace(/"/g, ""))} />
+          }} editing={editing} />
+          <Editable as="span" className="lulu" value={`"${baby.nickname}"`} onChange={(v) => update("nickname", v.replace(/"/g, ""))} editing={editing} />
         </h1>
-        <Editable as="p" className="hero-tag" value={baby.tagline} onChange={(v) => update("tagline", v)} multiline />
+        <Editable as="p" className="hero-tag" value={baby.tagline} onChange={(v) => update("tagline", v)} multiline editing={editing} />
 
         <div className="hero-meta">
           <div className="meta-item">
@@ -375,12 +388,12 @@ function Hero({ content, setContent, photos, onUpload, editing }) {
           <div className="meta-item">
             <div className="lbl">Parents</div>
             <div className="val">
-              <Editable value={content.family.map(f => f.name.split(" ")[0]).join(" & ")} onChange={() => {}} />
+              <Editable value={content.family.map(f => f.name.split(" ")[0]).join(" & ")} onChange={() => {}} editing={editing} />
             </div>
           </div>
           <div className="meta-item">
             <div className="lbl">Gender</div>
-            <div className="val"><Editable value={baby.gender} onChange={(v) => update("gender", v)} /></div>
+            <div className="val"><Editable value={baby.gender} onChange={(v) => update("gender", v)} editing={editing} /></div>
           </div>
           <div className="meta-item">
             <div className="lbl">Hobbies</div>
@@ -433,12 +446,12 @@ function About({ content, setContent, editing }) {
             <div className="fact-card-inner">
               <div className="fact-face">
                 <div className="fact-icon">{String(i + 1).padStart(2, "0")}</div>
-                <Editable as="div" className="fact-q" value={f.q} onChange={(v) => updateFact(i, "q", v)} />
+                <Editable as="div" className="fact-q" value={f.q} onChange={(v) => updateFact(i, "q", v)} editing={editing} />
                 <div className="flip-hint">tap to flip</div>
               </div>
               <div className="fact-face back">
                 <div className="fact-icon" style={{ background: "var(--paper)" }}>↻</div>
-                <Editable as="div" className="fact-a" value={f.a} onChange={(v) => updateFact(i, "a", v)} multiline />
+                <Editable as="div" className="fact-a" value={f.a} onChange={(v) => updateFact(i, "a", v)} multiline editing={editing} />
                 <div className="flip-hint">tap to flip back</div>
               </div>
             </div>
@@ -450,7 +463,7 @@ function About({ content, setContent, editing }) {
 }
 
 /* ============== Stats card ============== */
-function Stats({ content, setContent }) {
+function Stats({ content, setContent, editing }) {
   const age = ageFromBirth(content.baby.birthdate);
   const stats = content.stats.map((s) => {
     if (s.num === "AUTO_DAYS") return { ...s, num: age.days, computed: true };
@@ -479,11 +492,11 @@ function Stats({ content, setContent }) {
               {s.computed ? (
                 <span className="stat-num">{s.num}</span>
               ) : (
-                <Editable as="span" className="stat-num" value={String(s.num)} onChange={(v) => updateStat(i, "num", v)} />
+                <Editable as="span" className="stat-num" value={String(s.num)} onChange={(v) => updateStat(i, "num", v)} editing={editing} />
               )}
               {s.computed
                 ? s.unit && <span className="stat-unit">{s.unit}</span>
-                : <Editable as="span" className="stat-unit" value={s.unit || ""} onChange={(v) => updateStat(i, "unit", v)} placeholder="unit" />}
+                : <Editable as="span" className="stat-unit" value={s.unit || ""} onChange={(v) => updateStat(i, "unit", v)} placeholder="unit" editing={editing} />}
             </div>
             <div className="stat-lbl">{s.lbl}</div>
           </div>
@@ -494,7 +507,7 @@ function Stats({ content, setContent }) {
 }
 
 /* ============== Timeline ============== */
-function Timeline({ content, setContent, editing }) {
+function Timeline({ content, setContent, editing, photos, photoIds, onUpload, onRemovePhoto, onRenamePhotoSlot }) {
   const update = (i, k, v) => {
     const next = [...content.timeline];
     next[i] = { ...next[i], [k]: v };
@@ -504,7 +517,22 @@ function Timeline({ content, setContent, editing }) {
     ...content,
     timeline: [...content.timeline, { date: "Today", title: "A new milestone", desc: "Tell the story…" }],
   });
-  const remove = (i) => {
+  const remove = async (i) => {
+    try {
+      if (photoIds[`timeline-${i}`]) {
+        await onRemovePhoto(`timeline-${i}`);
+      }
+      // Rename downward only; safe with the render-time photoIds snapshot because
+      // each source slot is read before any later iteration touches it.
+      for (let j = i + 1; j < content.timeline.length; j++) {
+        if (photoIds[`timeline-${j}`]) {
+          await onRenamePhotoSlot(`timeline-${j}`, `timeline-${j - 1}`);
+        }
+      }
+    } catch (err) {
+      alert(`Couldn't update photos for milestone removal: ${err.message}`);
+      return;
+    }
     const next = content.timeline.filter((_, idx) => idx !== i);
     setContent({ ...content, timeline: next });
   };
@@ -520,13 +548,26 @@ function Timeline({ content, setContent, editing }) {
       <div className="timeline">
         {content.timeline.map((t, i) => (
           <div className="tl-item" key={i}>
-            <Editable as="div" className="tl-date" value={t.date} onChange={(v) => update(i, "date", v)} />
-            <Editable as="div" className="tl-title display" value={t.title} onChange={(v) => update(i, "title", v)} />
-            <Editable as="div" className="tl-desc" value={t.desc} onChange={(v) => update(i, "desc", v)} multiline />
-            {editing && (
-              <button className="tl-add edit-only" style={{ marginTop: 8, background: "transparent" }} onClick={() => remove(i)}>
-                × remove
-              </button>
+            <div className="tl-item-text">
+              <Editable as="div" className="tl-date" value={t.date} onChange={(v) => update(i, "date", v)} editing={editing} />
+              <Editable as="div" className="tl-title display" value={t.title} onChange={(v) => update(i, "title", v)} editing={editing} />
+              <Editable as="div" className="tl-desc" value={t.desc} onChange={(v) => update(i, "desc", v)} multiline editing={editing} />
+              {editing && (
+                <button className="tl-add edit-only" style={{ marginTop: 8, background: "transparent" }} onClick={() => remove(i)}>
+                  × remove
+                </button>
+              )}
+            </div>
+            {(editing || photos[`timeline-${i}`]) && (
+              <div className="tl-polaroid">
+                <Photo
+                  id={`timeline-${i}`}
+                  label="add a photo"
+                  photos={photos}
+                  onUpload={onUpload}
+                  editing={editing}
+                />
+              </div>
             )}
           </div>
         ))}
@@ -618,7 +659,7 @@ function Gallery({ content, setContent, photos, onUpload, editing }) {
             <div className="pphoto">
               <Photo id={`gallery-${i}`} label={g.caption} photos={photos} onUpload={onUpload} editing={editing} />
             </div>
-            <Editable as="div" className="pcap" value={g.caption} onChange={(v) => updateCap(i, v)} />
+            <Editable as="div" className="pcap" value={g.caption} onChange={(v) => updateCap(i, v)} editing={editing} />
           </div>
         ))}
         <div className="gallery-help">drag · drop · double-click to enlarge</div>
@@ -663,9 +704,9 @@ function Family({ content, setContent, photos, onUpload, editing }) {
               <Photo id={`fam-${i}`} label={p.rel} photos={photos} onUpload={onUpload} editing={editing} />
             </div>
             <div>
-              <div className="family-rel"><Editable value={p.rel} onChange={(v) => updateFam(i, "rel", v)} /></div>
-              <div className="family-name display"><Editable value={p.name} onChange={(v) => updateFam(i, "name", v)} /></div>
-              <div className="family-note"><Editable value={p.note} onChange={(v) => updateFam(i, "note", v)} multiline /></div>
+              <div className="family-rel"><Editable value={p.rel} onChange={(v) => updateFam(i, "rel", v)} editing={editing} /></div>
+              <div className="family-name display"><Editable value={p.name} onChange={(v) => updateFam(i, "name", v)} editing={editing} /></div>
+              <div className="family-note"><Editable value={p.note} onChange={(v) => updateFam(i, "note", v)} multiline editing={editing} /></div>
             </div>
           </div>
         ))}
@@ -685,7 +726,7 @@ function Family({ content, setContent, photos, onUpload, editing }) {
 }
 
 /* ============== Letter ============== */
-function Letter({ content, setContent }) {
+function Letter({ content, setContent, editing }) {
   const update = (k, v) => setContent({ ...content, letter: { ...content.letter, [k]: v } });
   return (
     <section className="s" id="letter">
@@ -697,9 +738,9 @@ function Letter({ content, setContent }) {
         <p className="s-sub">From the people who waited the longest.</p>
       </div>
       <div className="letter">
-        <Editable as="div" className="letter-date" value={content.letter.date} onChange={(v) => update("date", v)} />
-        <Editable as="div" className="letter-body" value={content.letter.body} onChange={(v) => update("body", v)} multiline />
-        <Editable as="div" className="letter-sign" value={content.letter.sign} onChange={(v) => update("sign", v)} />
+        <Editable as="div" className="letter-date" value={content.letter.date} onChange={(v) => update("date", v)} editing={editing} />
+        <Editable as="div" className="letter-body" value={content.letter.body} onChange={(v) => update("body", v)} multiline editing={editing} />
+        <Editable as="div" className="letter-sign" value={content.letter.sign} onChange={(v) => update("sign", v)} editing={editing} />
       </div>
     </section>
   );
@@ -725,9 +766,9 @@ function Routine({ content, setContent, editing }) {
       <div className="routine">
         {content.routine.map((r, i) => (
           <div className="routine-block" key={i} style={{ "--accent": colors[i % colors.length] }}>
-            <Editable className="r-time mono" value={r.time} onChange={(v) => update(i, "time", v)} />
-            <Editable className="r-act" value={r.act} onChange={(v) => update(i, "act", v)} />
-            <Editable className="r-note" value={r.note} onChange={(v) => update(i, "note", v)} multiline />
+            <Editable className="r-time mono" value={r.time} onChange={(v) => update(i, "time", v)} editing={editing} />
+            <Editable className="r-act" value={r.act} onChange={(v) => update(i, "act", v)} editing={editing} />
+            <Editable className="r-note" value={r.note} onChange={(v) => update(i, "note", v)} multiline editing={editing} />
           </div>
         ))}
       </div>
@@ -736,7 +777,7 @@ function Routine({ content, setContent, editing }) {
 }
 
 /* ============== Wishes ============== */
-function Wishes({ content, setContent }) {
+function Wishes({ content, setContent, editing }) {
   const update = (i, v) => {
     const next = [...content.wishes];
     next[i] = v;
@@ -755,7 +796,7 @@ function Wishes({ content, setContent }) {
         {content.wishes.map((w, i) => (
           <div className="wish" key={i}>
             <div className="wish-num display">{String(i + 1).padStart(2, "0")}</div>
-            <Editable as="div" className="wish-text" value={w} onChange={(v) => update(i, v)} multiline />
+            <Editable as="div" className="wish-text" value={w} onChange={(v) => update(i, v)} multiline editing={editing} />
           </div>
         ))}
       </div>
@@ -1018,6 +1059,22 @@ function App() {
     setPhotoIds((m) => ({ ...m, [slot]: id }));
   }, [photoIds]);
 
+  const onRemovePhoto = useCallback(async (slot) => {
+    const id = photoIds[slot];
+    if (!id) return;
+    await deletePhoto(id);
+    setPhotos((p) => { const n = { ...p }; delete n[slot]; return n; });
+    setPhotoIds((m) => { const n = { ...m }; delete n[slot]; return n; });
+  }, [photoIds]);
+
+  const onRenamePhotoSlot = useCallback(async (oldSlot, newSlot) => {
+    const id = photoIds[oldSlot];
+    if (!id) return;
+    const { url } = await renamePhotoSlot(id, newSlot);
+    setPhotos((p) => { const n = { ...p }; delete n[oldSlot]; n[newSlot] = url; return n; });
+    setPhotoIds((m) => { const n = { ...m }; delete n[oldSlot]; n[newSlot] = id; return n; });
+  }, [photoIds]);
+
   const onGuestbookSubmit = useCallback(async (name, body) => {
     await submitGuestbookEntry(name, body);
     const items = await fetchGuestbook();
@@ -1035,13 +1092,13 @@ function App() {
       />
       <Hero content={content} setContent={setContent} photos={photos} onUpload={onPhotoUpload} editing={editing} />
       <About content={content} setContent={setContent} editing={editing} />
-      <Stats content={content} setContent={setContent} />
-      <Timeline content={content} setContent={setContent} editing={editing} />
+      <Stats content={content} setContent={setContent} editing={editing} />
+      <Timeline content={content} setContent={setContent} editing={editing} photos={photos} photoIds={photoIds} onUpload={onPhotoUpload} onRemovePhoto={onRemovePhoto} onRenamePhotoSlot={onRenamePhotoSlot} />
       <Gallery content={content} setContent={setContent} photos={photos} onUpload={onPhotoUpload} editing={editing} />
       <Family content={content} setContent={setContent} photos={photos} onUpload={onPhotoUpload} editing={editing} />
-      <Letter content={content} setContent={setContent} />
+      <Letter content={content} setContent={setContent} editing={editing} />
       <Routine content={content} setContent={setContent} editing={editing} />
-      <Wishes content={content} setContent={setContent} />
+      <Wishes content={content} setContent={setContent} editing={editing} />
       <Guestbook entries={guestbook} onSubmit={onGuestbookSubmit} />
 
       <footer className="footer">
