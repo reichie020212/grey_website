@@ -120,6 +120,16 @@ async function uploadPhoto(slot, file, existingId) {
   return { id: rec.id, url: pbFileUrl(rec, rec.image) };
 }
 
+const deletePhoto = (id) =>
+  apiFetch(`/collections/photos/records/${id}`, { method: "DELETE" });
+
+async function renamePhotoSlot(id, newSlot) {
+  const fd = new FormData();
+  fd.append("slot", newSlot);
+  const rec = await apiFetch(`/collections/photos/records/${id}`, { method: "PATCH", form: fd });
+  return { id: rec.id, url: pbFileUrl(rec, rec.image) };
+}
+
 const fetchGuestbook = () =>
   apiFetch("/collections/guestbook/records?sort=-created&perPage=200").then((o) => o.items);
 
@@ -497,7 +507,7 @@ function Stats({ content, setContent, editing }) {
 }
 
 /* ============== Timeline ============== */
-function Timeline({ content, setContent, editing }) {
+function Timeline({ content, setContent, editing, photos, photoIds, onUpload, onRemovePhoto, onRenamePhotoSlot }) {
   const update = (i, k, v) => {
     const next = [...content.timeline];
     next[i] = { ...next[i], [k]: v };
@@ -507,7 +517,20 @@ function Timeline({ content, setContent, editing }) {
     ...content,
     timeline: [...content.timeline, { date: "Today", title: "A new milestone", desc: "Tell the story…" }],
   });
-  const remove = (i) => {
+  const remove = async (i) => {
+    try {
+      if (photoIds[`timeline-${i}`]) {
+        await onRemovePhoto(`timeline-${i}`);
+      }
+      for (let j = i + 1; j < content.timeline.length; j++) {
+        if (photoIds[`timeline-${j}`]) {
+          await onRenamePhotoSlot(`timeline-${j}`, `timeline-${j - 1}`);
+        }
+      }
+    } catch (err) {
+      alert(`Couldn't update photos for milestone removal: ${err.message}`);
+      return;
+    }
     const next = content.timeline.filter((_, idx) => idx !== i);
     setContent({ ...content, timeline: next });
   };
@@ -523,13 +546,26 @@ function Timeline({ content, setContent, editing }) {
       <div className="timeline">
         {content.timeline.map((t, i) => (
           <div className="tl-item" key={i}>
-            <Editable as="div" className="tl-date" value={t.date} onChange={(v) => update(i, "date", v)} editing={editing} />
-            <Editable as="div" className="tl-title display" value={t.title} onChange={(v) => update(i, "title", v)} editing={editing} />
-            <Editable as="div" className="tl-desc" value={t.desc} onChange={(v) => update(i, "desc", v)} multiline editing={editing} />
-            {editing && (
-              <button className="tl-add edit-only" style={{ marginTop: 8, background: "transparent" }} onClick={() => remove(i)}>
-                × remove
-              </button>
+            <div className="tl-item-text">
+              <Editable as="div" className="tl-date" value={t.date} onChange={(v) => update(i, "date", v)} editing={editing} />
+              <Editable as="div" className="tl-title display" value={t.title} onChange={(v) => update(i, "title", v)} editing={editing} />
+              <Editable as="div" className="tl-desc" value={t.desc} onChange={(v) => update(i, "desc", v)} multiline editing={editing} />
+              {editing && (
+                <button className="tl-add edit-only" style={{ marginTop: 8, background: "transparent" }} onClick={() => remove(i)}>
+                  × remove
+                </button>
+              )}
+            </div>
+            {(editing || photos[`timeline-${i}`]) && (
+              <div className="tl-polaroid">
+                <Photo
+                  id={`timeline-${i}`}
+                  label="add a photo"
+                  photos={photos}
+                  onUpload={onUpload}
+                  editing={editing}
+                />
+              </div>
             )}
           </div>
         ))}
@@ -1021,6 +1057,22 @@ function App() {
     setPhotoIds((m) => ({ ...m, [slot]: id }));
   }, [photoIds]);
 
+  const onRemovePhoto = useCallback(async (slot) => {
+    const id = photoIds[slot];
+    if (!id) return;
+    await deletePhoto(id);
+    setPhotos((p) => { const n = { ...p }; delete n[slot]; return n; });
+    setPhotoIds((m) => { const n = { ...m }; delete n[slot]; return n; });
+  }, [photoIds]);
+
+  const onRenamePhotoSlot = useCallback(async (oldSlot, newSlot) => {
+    const id = photoIds[oldSlot];
+    if (!id) return;
+    const { url } = await renamePhotoSlot(id, newSlot);
+    setPhotos((p) => { const n = { ...p }; delete n[oldSlot]; n[newSlot] = url; return n; });
+    setPhotoIds((m) => { const n = { ...m }; delete n[oldSlot]; n[newSlot] = id; return n; });
+  }, [photoIds]);
+
   const onGuestbookSubmit = useCallback(async (name, body) => {
     await submitGuestbookEntry(name, body);
     const items = await fetchGuestbook();
@@ -1039,7 +1091,7 @@ function App() {
       <Hero content={content} setContent={setContent} photos={photos} onUpload={onPhotoUpload} editing={editing} />
       <About content={content} setContent={setContent} editing={editing} />
       <Stats content={content} setContent={setContent} editing={editing} />
-      <Timeline content={content} setContent={setContent} editing={editing} />
+      <Timeline content={content} setContent={setContent} editing={editing} photos={photos} photoIds={photoIds} onUpload={onPhotoUpload} onRemovePhoto={onRemovePhoto} onRenamePhotoSlot={onRenamePhotoSlot} />
       <Gallery content={content} setContent={setContent} photos={photos} onUpload={onPhotoUpload} editing={editing} />
       <Family content={content} setContent={setContent} photos={photos} onUpload={onPhotoUpload} editing={editing} />
       <Letter content={content} setContent={setContent} editing={editing} />
