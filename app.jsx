@@ -351,15 +351,15 @@ function Hero({ content, setContent, photos, onUpload, editing }) {
           <Editable as="span" value={baby.fullName.split(" ")[0]} onChange={(v) => {
             const rest = baby.fullName.split(" ").slice(1).join(" ");
             update("fullName", `${v} ${rest}`.trim());
-          }} />
+          }} editing={editing} />
           <br/>
           <Editable as="span" value={baby.fullName.split(" ").slice(1).join(" ")} onChange={(v) => {
             const first = baby.fullName.split(" ")[0];
             update("fullName", `${first} ${v}`.trim());
-          }} />
-          <Editable as="span" className="lulu" value={`"${baby.nickname}"`} onChange={(v) => update("nickname", v.replace(/"/g, ""))} />
+          }} editing={editing} />
+          <Editable as="span" className="lulu" value={`"${baby.nickname}"`} onChange={(v) => update("nickname", v.replace(/"/g, ""))} editing={editing} />
         </h1>
-        <Editable as="p" className="hero-tag" value={baby.tagline} onChange={(v) => update("tagline", v)} multiline />
+        <Editable as="p" className="hero-tag" value={baby.tagline} onChange={(v) => update("tagline", v)} multiline editing={editing} />
 
         <div className="hero-meta">
           <div className="meta-item">
@@ -378,12 +378,12 @@ function Hero({ content, setContent, photos, onUpload, editing }) {
           <div className="meta-item">
             <div className="lbl">Parents</div>
             <div className="val">
-              <Editable value={content.family.map(f => f.name.split(" ")[0]).join(" & ")} onChange={() => {}} />
+              <Editable value={content.family.map(f => f.name.split(" ")[0]).join(" & ")} onChange={() => {}} editing={editing} />
             </div>
           </div>
           <div className="meta-item">
             <div className="lbl">Gender</div>
-            <div className="val"><Editable value={baby.gender} onChange={(v) => update("gender", v)} /></div>
+            <div className="val"><Editable value={baby.gender} onChange={(v) => update("gender", v)} editing={editing} /></div>
           </div>
           <div className="meta-item">
             <div className="lbl">Hobbies</div>
@@ -436,12 +436,12 @@ function About({ content, setContent, editing }) {
             <div className="fact-card-inner">
               <div className="fact-face">
                 <div className="fact-icon">{String(i + 1).padStart(2, "0")}</div>
-                <Editable as="div" className="fact-q" value={f.q} onChange={(v) => updateFact(i, "q", v)} />
+                <Editable as="div" className="fact-q" value={f.q} onChange={(v) => updateFact(i, "q", v)} editing={editing} />
                 <div className="flip-hint">tap to flip</div>
               </div>
               <div className="fact-face back">
                 <div className="fact-icon" style={{ background: "var(--paper)" }}>↻</div>
-                <Editable as="div" className="fact-a" value={f.a} onChange={(v) => updateFact(i, "a", v)} multiline />
+                <Editable as="div" className="fact-a" value={f.a} onChange={(v) => updateFact(i, "a", v)} multiline editing={editing} />
                 <div className="flip-hint">tap to flip back</div>
               </div>
             </div>
@@ -453,7 +453,7 @@ function About({ content, setContent, editing }) {
 }
 
 /* ============== Stats card ============== */
-function Stats({ content, setContent }) {
+function Stats({ content, setContent, editing }) {
   const age = ageFromBirth(content.baby.birthdate);
   const stats = content.stats.map((s) => {
     if (s.num === "AUTO_DAYS") return { ...s, num: age.days, computed: true };
@@ -482,11 +482,11 @@ function Stats({ content, setContent }) {
               {s.computed ? (
                 <span className="stat-num">{s.num}</span>
               ) : (
-                <Editable as="span" className="stat-num" value={String(s.num)} onChange={(v) => updateStat(i, "num", v)} />
+                <Editable as="span" className="stat-num" value={String(s.num)} onChange={(v) => updateStat(i, "num", v)} editing={editing} />
               )}
               {s.computed
                 ? s.unit && <span className="stat-unit">{s.unit}</span>
-                : <Editable as="span" className="stat-unit" value={s.unit || ""} onChange={(v) => updateStat(i, "unit", v)} placeholder="unit" />}
+                : <Editable as="span" className="stat-unit" value={s.unit || ""} onChange={(v) => updateStat(i, "unit", v)} placeholder="unit" editing={editing} />}
             </div>
             <div className="stat-lbl">{s.lbl}</div>
           </div>
@@ -523,9 +523,9 @@ function Timeline({ content, setContent, editing }) {
       <div className="timeline">
         {content.timeline.map((t, i) => (
           <div className="tl-item" key={i}>
-            <Editable as="div" className="tl-date" value={t.date} onChange={(v) => update(i, "date", v)} />
-            <Editable as="div" className="tl-title display" value={t.title} onChange={(v) => update(i, "title", v)} />
-            <Editable as="div" className="tl-desc" value={t.desc} onChange={(v) => update(i, "desc", v)} multiline />
+            <Editable as="div" className="tl-date" value={t.date} onChange={(v) => update(i, "date", v)} editing={editing} />
+            <Editable as="div" className="tl-title display" value={t.title} onChange={(v) => update(i, "title", v)} editing={editing} />
+            <Editable as="div" className="tl-desc" value={t.desc} onChange={(v) => update(i, "desc", v)} multiline editing={editing} />
             {editing && (
               <button className="tl-add edit-only" style={{ marginTop: 8, background: "transparent" }} onClick={() => remove(i)}>
                 × remove
@@ -621,7 +621,7 @@ function Gallery({ content, setContent, photos, onUpload, editing }) {
             <div className="pphoto">
               <Photo id={`gallery-${i}`} label={g.caption} photos={photos} onUpload={onUpload} editing={editing} />
             </div>
-            <Editable as="div" className="pcap" value={g.caption} onChange={(v) => updateCap(i, v)} />
+            <Editable as="div" className="pcap" value={g.caption} onChange={(v) => updateCap(i, v)} editing={editing} />
           </div>
         ))}
         <div className="gallery-help">drag · drop · double-click to enlarge</div>
@@ -666,9 +666,9 @@ function Family({ content, setContent, photos, onUpload, editing }) {
               <Photo id={`fam-${i}`} label={p.rel} photos={photos} onUpload={onUpload} editing={editing} />
             </div>
             <div>
-              <div className="family-rel"><Editable value={p.rel} onChange={(v) => updateFam(i, "rel", v)} /></div>
-              <div className="family-name display"><Editable value={p.name} onChange={(v) => updateFam(i, "name", v)} /></div>
-              <div className="family-note"><Editable value={p.note} onChange={(v) => updateFam(i, "note", v)} multiline /></div>
+              <div className="family-rel"><Editable value={p.rel} onChange={(v) => updateFam(i, "rel", v)} editing={editing} /></div>
+              <div className="family-name display"><Editable value={p.name} onChange={(v) => updateFam(i, "name", v)} editing={editing} /></div>
+              <div className="family-note"><Editable value={p.note} onChange={(v) => updateFam(i, "note", v)} multiline editing={editing} /></div>
             </div>
           </div>
         ))}
@@ -688,7 +688,7 @@ function Family({ content, setContent, photos, onUpload, editing }) {
 }
 
 /* ============== Letter ============== */
-function Letter({ content, setContent }) {
+function Letter({ content, setContent, editing }) {
   const update = (k, v) => setContent({ ...content, letter: { ...content.letter, [k]: v } });
   return (
     <section className="s" id="letter">
@@ -700,9 +700,9 @@ function Letter({ content, setContent }) {
         <p className="s-sub">From the people who waited the longest.</p>
       </div>
       <div className="letter">
-        <Editable as="div" className="letter-date" value={content.letter.date} onChange={(v) => update("date", v)} />
-        <Editable as="div" className="letter-body" value={content.letter.body} onChange={(v) => update("body", v)} multiline />
-        <Editable as="div" className="letter-sign" value={content.letter.sign} onChange={(v) => update("sign", v)} />
+        <Editable as="div" className="letter-date" value={content.letter.date} onChange={(v) => update("date", v)} editing={editing} />
+        <Editable as="div" className="letter-body" value={content.letter.body} onChange={(v) => update("body", v)} multiline editing={editing} />
+        <Editable as="div" className="letter-sign" value={content.letter.sign} onChange={(v) => update("sign", v)} editing={editing} />
       </div>
     </section>
   );
@@ -728,9 +728,9 @@ function Routine({ content, setContent, editing }) {
       <div className="routine">
         {content.routine.map((r, i) => (
           <div className="routine-block" key={i} style={{ "--accent": colors[i % colors.length] }}>
-            <Editable className="r-time mono" value={r.time} onChange={(v) => update(i, "time", v)} />
-            <Editable className="r-act" value={r.act} onChange={(v) => update(i, "act", v)} />
-            <Editable className="r-note" value={r.note} onChange={(v) => update(i, "note", v)} multiline />
+            <Editable className="r-time mono" value={r.time} onChange={(v) => update(i, "time", v)} editing={editing} />
+            <Editable className="r-act" value={r.act} onChange={(v) => update(i, "act", v)} editing={editing} />
+            <Editable className="r-note" value={r.note} onChange={(v) => update(i, "note", v)} multiline editing={editing} />
           </div>
         ))}
       </div>
@@ -739,7 +739,7 @@ function Routine({ content, setContent, editing }) {
 }
 
 /* ============== Wishes ============== */
-function Wishes({ content, setContent }) {
+function Wishes({ content, setContent, editing }) {
   const update = (i, v) => {
     const next = [...content.wishes];
     next[i] = v;
@@ -758,7 +758,7 @@ function Wishes({ content, setContent }) {
         {content.wishes.map((w, i) => (
           <div className="wish" key={i}>
             <div className="wish-num display">{String(i + 1).padStart(2, "0")}</div>
-            <Editable as="div" className="wish-text" value={w} onChange={(v) => update(i, v)} multiline />
+            <Editable as="div" className="wish-text" value={w} onChange={(v) => update(i, v)} multiline editing={editing} />
           </div>
         ))}
       </div>
@@ -1038,13 +1038,13 @@ function App() {
       />
       <Hero content={content} setContent={setContent} photos={photos} onUpload={onPhotoUpload} editing={editing} />
       <About content={content} setContent={setContent} editing={editing} />
-      <Stats content={content} setContent={setContent} />
+      <Stats content={content} setContent={setContent} editing={editing} />
       <Timeline content={content} setContent={setContent} editing={editing} />
       <Gallery content={content} setContent={setContent} photos={photos} onUpload={onPhotoUpload} editing={editing} />
       <Family content={content} setContent={setContent} photos={photos} onUpload={onPhotoUpload} editing={editing} />
-      <Letter content={content} setContent={setContent} />
+      <Letter content={content} setContent={setContent} editing={editing} />
       <Routine content={content} setContent={setContent} editing={editing} />
-      <Wishes content={content} setContent={setContent} />
+      <Wishes content={content} setContent={setContent} editing={editing} />
       <Guestbook entries={guestbook} onSubmit={onGuestbookSubmit} />
 
       <footer className="footer">
