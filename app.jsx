@@ -149,9 +149,12 @@ function formatBirthdate(d) {
 }
 
 /* ============== Editable text component ============== */
-function Editable({ value, onChange, multiline = false, className = "", as = "span", placeholder = "" }) {
+function Editable({ value, onChange, editing = false, multiline = false, className = "", as = "span", placeholder = "" }) {
   const Tag = as;
   const ref = useRef(null);
+  if (!editing) {
+    return <Tag className={className}>{value}</Tag>;
+  }
   const onBlur = () => {
     if (!ref.current) return;
     const v = multiline ? ref.current.innerText : ref.current.innerText.replace(/\n/g, " ").trim();
