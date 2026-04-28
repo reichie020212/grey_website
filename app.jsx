@@ -300,7 +300,7 @@ function TopBar({ dark, setDark, music, setMusic, editing, unlocked, onLockClick
     <div className="topbar">
       <div className="topbar-brand">
         <span className="dot"></span>
-        <span>Castiel · Lulu</span>
+        <span>Grey · Lulu</span>
       </div>
       <nav className="topbar-nav">
         <a href="#about">About</a>
