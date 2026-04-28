@@ -522,6 +522,8 @@ function Timeline({ content, setContent, editing, photos, photoIds, onUpload, on
       if (photoIds[`timeline-${i}`]) {
         await onRemovePhoto(`timeline-${i}`);
       }
+      // Rename downward only; safe with the render-time photoIds snapshot because
+      // each source slot is read before any later iteration touches it.
       for (let j = i + 1; j < content.timeline.length; j++) {
         if (photoIds[`timeline-${j}`]) {
           await onRenamePhotoSlot(`timeline-${j}`, `timeline-${j - 1}`);
