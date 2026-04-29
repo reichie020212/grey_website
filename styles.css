@@ -433,6 +433,17 @@ section.s {
     margin-bottom: 8px;
     order: -1;
   }
+  .family {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .family::before { display: none; }
+  .family-card { padding: 20px; gap: 16px; }
+  .family-card.baby {
+    min-width: 0;
+    width: 100%;
+    padding: 24px 20px;
+  }
 }
 .tl-item::before {
   content: ""; position: absolute; left: -47px; top: 22px;
