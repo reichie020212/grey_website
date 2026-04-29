@@ -892,7 +892,7 @@ function Guestbook({ entries, onSubmit }) {
             value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={3}
-            maxLength={400}
+            maxLength={2000}
             disabled={busy}
           />
           <button type="submit" disabled={busy}>{busy ? "Signing…" : "Sign the book ✒"}</button>
