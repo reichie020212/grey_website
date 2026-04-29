@@ -117,6 +117,54 @@ body {
 .icon-btn:hover { transform: translateY(-1px); background: var(--peach); color: var(--ink); }
 .icon-btn.active { background: var(--peach-deep); color: var(--paper); }
 
+/* ============== Mobile burger + drawer ============== */
+.topbar-burger { display: none; }
+
+.burger-icon {
+  display: inline-flex; flex-direction: column; justify-content: center;
+  gap: 4px; width: 16px; height: 14px;
+}
+.burger-icon span {
+  display: block; height: 1.5px; width: 100%;
+  background: currentColor; border-radius: 1px;
+  transition: transform 0.25s ease, opacity 0.2s ease;
+  transform-origin: center;
+}
+.burger-icon.open span:nth-child(1) { transform: translateY(5.5px) rotate(45deg); }
+.burger-icon.open span:nth-child(2) { opacity: 0; transform: scaleX(0.4); }
+.burger-icon.open span:nth-child(3) { transform: translateY(-5.5px) rotate(-45deg); }
+
+.mobile-menu-backdrop {
+  position: fixed; inset: 0; z-index: 90;
+  background: rgba(28, 26, 23, 0.18);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+.mobile-menu-backdrop.open { opacity: 1; pointer-events: auto; }
+
+.mobile-menu {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 95;
+  display: flex; flex-direction: column;
+  padding: 78px 24px 28px;
+  background: var(--paper);
+  border-bottom: 0.5px solid var(--line);
+  box-shadow: 0 12px 32px -16px rgba(28, 26, 23, 0.18);
+  transform: translateY(-100%);
+  transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+  visibility: hidden;
+}
+.mobile-menu.open { transform: translateY(0); visibility: visible; }
+.mobile-menu a {
+  font-family: var(--display); font-size: 22px; font-weight: 400;
+  color: var(--ink); text-decoration: none;
+  padding: 14px 4px; border-bottom: 0.5px solid var(--line);
+  transition: color 0.2s, padding 0.2s;
+}
+.mobile-menu a:last-child { border-bottom: none; }
+.mobile-menu a:hover, .mobile-menu a:active {
+  color: var(--peach-deep); padding-left: 12px;
+}
+
 .lock-pill {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 6px 12px; border-radius: 999px;
@@ -846,6 +894,8 @@ section.s {
   .hero { grid-template-columns: 1fr; padding-top: 100px; }
   .hero-portrait { max-height: 60vh; }
   .topbar-nav { display: none; }
+  .topbar-burger { display: inline-flex; }
+  .topbar { padding: 12px 18px; }
   section.s { padding: 70px 5vw; }
   .letter { padding: 40px 28px; }
   .letter::before { left: 28px; }

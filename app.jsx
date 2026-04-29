@@ -308,7 +308,30 @@ function useLullaby(playing) {
 }
 
 /* ============== Top bar ============== */
+const NAV_LINKS = [
+  ["#about", "About"],
+  ["#timeline", "Timeline"],
+  ["#gallery", "Gallery"],
+  ["#family", "Family"],
+  ["#letter", "Letter"],
+  ["#guestbook", "Guestbook"],
+];
+
 function TopBar({ dark, setDark, music, setMusic, editing, unlocked, onLockClick, onSaveStatus }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  // Lock body scroll while the mobile drawer is open, and close on Escape.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e) => { if (e.key === "Escape") setMenuOpen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menuOpen]);
+
   return (
     <div className="topbar">
       <div className="topbar-brand">
@@ -316,12 +339,9 @@ function TopBar({ dark, setDark, music, setMusic, editing, unlocked, onLockClick
         <span>Grey · Lulu</span>
       </div>
       <nav className="topbar-nav">
-        <a href="#about">About</a>
-        <a href="#timeline">Timeline</a>
-        <a href="#gallery">Gallery</a>
-        <a href="#family">Family</a>
-        <a href="#letter">Letter</a>
-        <a href="#guestbook">Guestbook</a>
+        {NAV_LINKS.map(([href, label]) => (
+          <a key={href} href={href}>{label}</a>
+        ))}
       </nav>
       <div className="topbar-actions">
         {editing && <span className="lock-pill unlocked">edit mode · {onSaveStatus}</span>}
@@ -344,7 +364,27 @@ function TopBar({ dark, setDark, music, setMusic, editing, unlocked, onLockClick
           onClick={onLockClick}
           title={unlocked ? "Lock editing" : "Unlock to edit"}
         >{unlocked ? "✎" : "🔒"}</button>
+        <button
+          className={`icon-btn topbar-burger ${menuOpen ? "active" : ""}`}
+          onClick={() => setMenuOpen((o) => !o)}
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={menuOpen}
+        >
+          <span className={`burger-icon ${menuOpen ? "open" : ""}`}>
+            <span></span><span></span><span></span>
+          </span>
+        </button>
       </div>
+
+      <div
+        className={`mobile-menu-backdrop ${menuOpen ? "open" : ""}`}
+        onClick={() => setMenuOpen(false)}
+      />
+      <nav className={`mobile-menu ${menuOpen ? "open" : ""}`} aria-hidden={!menuOpen}>
+        {NAV_LINKS.map(([href, label]) => (
+          <a key={href} href={href} onClick={() => setMenuOpen(false)}>{label}</a>
+        ))}
+      </nav>
     </div>
   );
 }
